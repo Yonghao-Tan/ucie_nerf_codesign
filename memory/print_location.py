@@ -10,16 +10,18 @@ H_t = 378  # 图像高度
 W_t = 504   # 图像宽度
 H_s = 756
 W_s = 1008
-window_size = 128  # 窗口大小，可调节的变量
+window_size = 8  # 窗口大小，可调节的变量
 fps = 64
 
 # 加速选项
 GENERATE_PLOTS = True  # 是否生成图片（设为False可大幅加速）
 PLOT_DPI = 300  # 降低DPI加速（原来400）
 PLOT_EVERY_N = 1  # 每N个窗口生成一张图（设为更大值可加速）
+RAY_DIFF = True  # 是否用不同颜色表示不同的samples
+DEBUG = False
 
 # 创建输出目录（先清空再创建）
-output_dir = "pixel_distribution_plots"
+output_dir = "plots/pixel_distribution_plots"
 if GENERATE_PLOTS:
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
@@ -28,7 +30,7 @@ if GENERATE_PLOTS:
     print(f"Created output directory: {output_dir}")
 
 # 加载张量
-pixel_locations = torch.load("../eval/outputs/pixel_locations.pt")
+pixel_locations = torch.load("../eval/outputs/pixel_locations_1.pt")
 print("Loaded tensor shape:", pixel_locations.shape)
 
 # Reshape 并提取切片
@@ -64,12 +66,37 @@ for source_view_idx in range(pixel_locations_2d.shape[0]):
         
         # 提取窗口数据（numpy操作更快）
         window_data = pixel_locations_slice[i:end_i, j:end_j]
-        window_flat = window_data.reshape(-1, 2)
+        
+        if RAY_DIFF:
+            # 保持原始shape以便区分不同的pixels
+            original_shape = window_data.shape  # [window_h, window_w, n_samples, 2]
+            window_flat = window_data.reshape(-1, 2)
+            
+            # 创建pixel标签，用于区分窗口内的不同pixels
+            window_h, window_w = original_shape[0], original_shape[1]
+            n_samples = original_shape[2]
+            
+            # 为每个pixel创建唯一标签 (h_idx * window_w + w_idx)
+            pixel_labels = []
+            for h_idx in range(window_h):
+                for w_idx in range(window_w):
+                    pixel_id = h_idx * window_w + w_idx
+                    # 每个pixel有n_samples个points，都标记为同一个pixel_id
+                    pixel_labels.extend([pixel_id] * n_samples)
+            pixel_labels = np.array(pixel_labels)
+        else:
+            window_flat = window_data.reshape(-1, 2)
+            pixel_labels = None
         
         # 使用numpy进行掩码操作（比torch更快）
         valid_mask = (window_flat[:, 0] >= 0) & (window_flat[:, 0] < W_s) & \
                      (window_flat[:, 1] >= 0) & (window_flat[:, 1] < H_s)
         valid_coordinates = window_flat[valid_mask]
+        
+        if RAY_DIFF and pixel_labels is not None:
+            valid_pixel_labels = pixel_labels[valid_mask]
+        else:
+            valid_pixel_labels = None
         
         # 如果没有有效坐标，跳过
         if valid_coordinates.shape[0] == 0:
@@ -97,20 +124,65 @@ for source_view_idx in range(pixel_locations_2d.shape[0]):
         if should_plot:
             # 创建散点图
             plt.figure(figsize=(8, 6))  # 稍微减小图片尺寸
-            plt.scatter(y_coords, x_coords, s=0.5, c='blue', alpha=0.7)
+            
+            if RAY_DIFF and valid_pixel_labels is not None:
+                # 随机选择16个pixels用不同颜色，其余用灰色
+                import matplotlib.cm as cm
+                unique_pixels = np.unique(valid_pixel_labels)
+                if DEBUG: print(f"Debug: Found {len(unique_pixels)} unique pixels in window [{i}:{end_i}, {j}:{end_j}]")
+                
+                # 随机选择16个pixels
+                np.random.seed(42)  # 固定随机种子以保证结果可重现
+                num_colored_pixels = min(16, len(unique_pixels))
+                selected_pixels = np.random.choice(unique_pixels, size=num_colored_pixels, replace=False)
+                
+                # 扩展颜色列表到16种
+                bright_colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'cyan',
+                               'lime', 'magenta', 'yellow', 'navy', 'maroon', 'olive', 'teal', 'silver']
+                
+                # 先画灰色背景点（最低优先级）
+                if len(unique_pixels) > num_colored_pixels:
+                    other_pixels = np.setdiff1d(unique_pixels, selected_pixels)
+                    other_pixels_mask = np.isin(valid_pixel_labels, other_pixels)
+                    other_coords = valid_coordinates[other_pixels_mask]
+                    if len(other_coords) > 0:
+                        plt.scatter(other_coords[:, 1], other_coords[:, 0], 
+                                  s=0.2, c='gray', alpha=0.8, 
+                                  marker='o', edgecolors='none',  # 实心圆点
+                                  zorder=100,  # 低优先级
+                                  label=f'Other Pixels ({len(other_pixels)})')
+                        if DEBUG: print(f"Debug: Plotted {len(other_coords)} points for other pixels in gray")
+                
+                # 再画选中的16个pixel，每个用不同颜色（高优先级）
+                for idx, pixel_idx in enumerate(selected_pixels):
+                    mask = valid_pixel_labels == pixel_idx
+                    pixel_coords = valid_coordinates[mask]
+                    if len(pixel_coords) > 0:
+                        color = bright_colors[idx % len(bright_colors)]
+                        zorder_value = 1000 - idx  # 递减优先级
+                        plt.scatter(pixel_coords[:, 1], pixel_coords[:, 0], 
+                                  s=0.5, c=color, alpha=0.9,
+                                  marker='o', edgecolors='none',  # 实心圆点
+                                  zorder=zorder_value,  # 高优先级，递减
+                                  label=f'Pixel {pixel_idx}')
+                        if DEBUG: print(f"Debug: Plotted {len(pixel_coords)} points for Pixel {pixel_idx} in {color} with zorder {zorder_value}")
+            else:
+                # 单一颜色显示所有点
+                plt.scatter(y_coords, x_coords, s=0.05, c='blue', alpha=0.7, 
+                          marker='o', edgecolors='none')  # 实心圆点
             
             # 绘制最小矩形边界
             rect_x = [y_min, y_max, y_max, y_min, y_min]
             rect_y = [x_min, x_min, x_max, x_max, x_min]
-            plt.plot(rect_x, rect_y, 'r-', linewidth=2, alpha=0.8, label=f'Bounding Box (Area: {rect_area:.1f})')
+            plt.plot(rect_x, rect_y, 'r-', linewidth=0.75, alpha=0.9, label=f'Bounding Box (Area: {rect_area:.1f})')
             
             # 设置图表标题和轴标签
-            plt.title(f"Source View {source_view_idx} - Window [{i}:{end_i}, {j}:{end_j}]\nArea: {rect_area:.1f} px², Mem: {mem:.1f}KB", fontsize=14)
+            title_suffix = " (Pixel Diff)" if RAY_DIFF else ""
+            plt.title(f"Source View {source_view_idx} - Window [{i}:{end_i}, {j}:{end_j}]{title_suffix}\nArea: {rect_area:.1f} px², Mem: {mem:.1f}KB", fontsize=14)
             plt.xlabel("Width (W)", fontsize=12)
             plt.ylabel("Height (H)", fontsize=12)
             
-            # 添加图例
-            plt.legend(loc='upper right')
+            plt.legend(loc='upper right', fontsize=6)
             
             # 设置坐标轴范围
             plt.xlim(0, W_s)

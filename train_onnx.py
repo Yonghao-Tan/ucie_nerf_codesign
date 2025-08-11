@@ -60,7 +60,7 @@ def pth_to_onnx(input, model, onnx_path, input_names=['input'], output_names=['o
 def train():
     
     parser = argparse.ArgumentParser(description="Calculate GFLOPs and latency for an ONNX model.")
-    parser.add_argument("--model_path", type=str, default="/home/ytanaz/access/IBRNet/osr_simp.onnx", help="Path to the ONNX model file.")
+    parser.add_argument("--model_path", type=str, default="/home/ytanaz/access/IBRNet/onnx/osr_simp.onnx", help="Path to the ONNX model file.")
     # parser.add_argument("--model_path", type=str, default="/home/ytanaz/access/IBRNet/ibrnet_generalizable_fine_48_simp.onnx", help="Path to the ONNX model file.")
     
     parser.add_argument("--frequency", type=int, default=500, help="Frequency in MHz (default: 500 MHz).")
@@ -87,6 +87,8 @@ def train():
     # ibrnet:
     # 16/48: 4.466 + 13.495 = 17.961
     # 64/128: 18.059 + 36.643 = 54.702
+    # 8 source views; coarse share 25; post share 9/16/25; 75% sparsity: 
+    # 0.8 * (4.466 / 25 + 13.495 * 9 / 25) * 0.25 = 1.
     
     # gnt:
     # 192: 362.889
@@ -241,12 +243,12 @@ def calculate_flops_and_latency(graph, frequency, G):
                     outer_dims *= dim
                     # print(last_dim_1, last_dim_2, last_dim_3, input_shape_1, outer_dims)
 
-            flops = flops_inner * outer_dims
+            flops = flops_inner * outer_dims * 2
 
             # 计算延时
-            latency = flops / tmacs * 2 # MAC->OP
-            total_flops += flops * 2 # MAC->OP
-            total_latency += latency * 2 # MAC->OP
+            latency = flops / tmacs
+            total_flops += flops
+            total_latency += latency
 
             # 打印单个节点的 FLOPs 和延时
             if G: print(f"Node: {node_name} ({node.op_type}) - FLOPs: {flops / 1e6:.3f} MFLOPs, Latency: {latency * 1e6:.3f} us")

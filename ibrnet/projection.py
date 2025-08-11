@@ -149,7 +149,7 @@ class Projector():
         #     np.save('source_view_poses.npy', train_cameras.unsqueeze(0).detach().cpu().numpy())
         #     np.save('target_view_pose.npy', query_camera.unsqueeze(0).detach().cpu().numpy())
         #     exit()
-        if n_samples == 48:
+        if False and n_samples == 16:
             # 累积保存逻辑
             with torch.no_grad():
                 cur = pixel_locations.detach().cpu()
@@ -158,7 +158,6 @@ class Projector():
                 else:
                     self.pixel_locations_accum = torch.cat([self.pixel_locations_accum, cur], dim=1)
                 # 只有 shape[0] != 7560 时才保存
-                print(self.pixel_locations_accum.shape)
                 if cur.shape[1] != 7560:
                     print('save', cur.shape)
                     torch.save(self.pixel_locations_accum, f"./outputs/pixel_locations_{self.save_idx}.pt")

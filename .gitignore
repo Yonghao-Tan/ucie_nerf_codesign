@@ -27,5 +27,5 @@ data
 Omni-SR/benchmark
 Omni-SR/test_logs
 *.onnx
-memory/pixel_distribution_plots
+memory/plots
 eval/outputs

@@ -58,6 +58,14 @@ class IBRNetModel(object):
         if self.sr:
             kwargs = {'upsampling': 2, 'kernel_size': 17, 'res_num': 5, 'block_num': 1, 'bias': True, 'block_script_name': 'OSA', 'block_class_name': 'OSA_Block', 'window_size': 8, 'pe': True, 'ffn_bias': True}
             self.sr_net = OmniSR(3, 3, 64, **kwargs).to(device)
+            # total_params = sum(p.numel() for p in self.sr_net.parameters())
+            # print(f"Total Parameters: {total_params/(1024*1024):.2f}M")
+            from thop import profile
+            input_tensor = torch.randn(1, 3, 16, 16).to(device)
+            # 计算 FLOPs 和参数量
+            flops, params = profile(self.sr_net, inputs=(input_tensor,))
+            print(f"FLOPs: {flops * 2 / 1e12}TFLOPs")
+            print(f"Parameters: {params / 1e6}M")
 
         # optimizer and learning rate scheduler
         learnable_params = list(self.net_coarse.parameters())

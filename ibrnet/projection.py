@@ -102,7 +102,7 @@ class Projector():
         assert (train_imgs.shape[0] == 1) \
                and (train_cameras.shape[0] == 1) \
                and (query_camera.shape[0] == 1), 'only support batch_size=1 for now'
-
+        
         train_imgs = train_imgs.squeeze(0)  # [n_views, h, w, 3]
         train_cameras = train_cameras.squeeze(0)  # [n_views, 34]
         query_camera = query_camera.squeeze(0)  # [34, ]
@@ -149,7 +149,7 @@ class Projector():
         #     np.save('source_view_poses.npy', train_cameras.unsqueeze(0).detach().cpu().numpy())
         #     np.save('target_view_pose.npy', query_camera.unsqueeze(0).detach().cpu().numpy())
         #     exit()
-        if n_samples == 48:
+        if False and n_samples == 48:
             # 累积保存逻辑
             with torch.no_grad():
                 cur = pixel_locations.detach().cpu()

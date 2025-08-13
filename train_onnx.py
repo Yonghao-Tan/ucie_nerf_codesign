@@ -22,6 +22,8 @@ import torch.utils.data.distributed
 import onnx
 import os
 from torch.utils.data import DataLoader
+from ibrnet.mlp_network import IBRNet
+from config import config_parser
 
 
 
@@ -58,10 +60,33 @@ def pth_to_onnx(input, model, onnx_path, input_names=['input'], output_names=['o
     
     
 def train():
+    # B, N, S = 1, 16, 8
+    # parser = config_parser()
+    # args = parser.parse_args()
+    # args.N_samples = N
+    # # Create IBRNet model
+    # model = IBRNet(args, in_feat_ch=args.coarse_feat_dim, n_samples=args.N_samples, use_moe=False).to('cpu')
+
+    # rgb_feat = torch.randn(B, N, S, 35, requires_grad=False, device='cpu')
+    # ray_diff = torch.randn(B, N, S, 4, requires_grad=False, device='cpu')
+    # mask = torch.randn(B, N, S, 1, requires_grad=False, device='cpu')
+    # input = tuple([(rgb_feat, ray_diff, mask)])
+    # input = [rgb_feat, ray_diff, mask]
+    # model(input)
+    # onnx_path = './onnx/ibrnet_generalizable_%d_s8.onnx' % N
+    # onnx_path_simp = './onnx/ibrnet_generalizable_%d_simp_s8.onnx' % N
+    # pth_to_onnx(input, model, onnx_path)
+
+    # from onnxsim import simplify
+    # onnx_model = onnx.load(onnx_path)
+    # model_simp, check = simplify(onnx_model)
+    # assert check, "Simplified ONNX model could not be validated"
+    # onnx.save(model_simp, onnx_path_simp)
+    # print("Simplified onnx model saved at {}".format(onnx_path_simp))
     
     parser = argparse.ArgumentParser(description="Calculate GFLOPs and latency for an ONNX model.")
-    parser.add_argument("--model_path", type=str, default="/home/ytanaz/access/IBRNet/onnx/osr_simp.onnx", help="Path to the ONNX model file.")
-    # parser.add_argument("--model_path", type=str, default="/home/ytanaz/access/IBRNet/ibrnet_generalizable_fine_48_simp.onnx", help="Path to the ONNX model file.")
+    parser.add_argument("--model_path", type=str, default="/home/ytanaz/access/IBRNet/onnx/ibrnet_generalizable_48_simp_s8.onnx", help="Path to the ONNX model file.")
+    # parser.add_argument("--model_path", type=str, default="/home/ytanaz/access/IBRNet/onnx/osr_simp.onnx", help="Path to the ONNX model file.")
     
     parser.add_argument("--frequency", type=int, default=500, help="Frequency in MHz (default: 500 MHz).")
     args = parser.parse_args()
@@ -73,15 +98,19 @@ def train():
     graph = model.graph
 
     # 计算 GFLOPs 和延时
-    total_flops, total_latency = calculate_flops_and_latency(graph, args.frequency, G=G)
+    total_flops, total_latency, total_sram_access = calculate_flops_and_latency(graph, args.frequency, G=G)
     
+    H, W = 800, 800
     # 输出总结果：GFLOPs 和延时 (ms)
     if G:
         print(f"Ray FLOPs: {total_flops / 1e6:.3f} MFLOPs")
-        print(f"Total FLOPs: {total_flops * 400 * 400 / 1e12:.3f} TFLOPs")
+        print(f"Ray SRAM access: {total_sram_access / (1024**2):.3f} MB")
+        print(f"Total FLOPs: {total_flops * H * W / 1e12:.3f} TFLOPs")
+        print(f"Total SRAM access: {total_sram_access * H * W / (1024**4):.3f} TB")
         # print(f"Total Latency: {total_latency * 1e3:.3f} ms")
     else:
         print(f"Total FLOPs: {total_flops / 1e12:.3f} TFLOPs")
+        print(f"Total SRAM access: {total_sram_access / (1024**4):.3f} TB")
         # print(f"Total Latency: {total_latency :.3f} s")
     # ibr_fine: 2.571, 0.? after optimization sr: 0.23
     # ibrnet:
@@ -100,13 +129,21 @@ import argparse
 
 # 固定的 MAC 数量
 MAC_units = 2048
+Tm = 16.
+Tr, Tc = 4., 4.
 
 # 定义卷积层 FLOPs 计算
 def calculate_conv_flops(output_shape, weight_shape):
-    print(output_shape, weight_shape)
     flops_per_position = weight_shape[2] * weight_shape[3] * weight_shape[1]
     total_flops = output_shape[1] * output_shape[2] * output_shape[3] * flops_per_position
     return total_flops * 2 # MAC->OP
+
+def calculate_conv_sram_os(output_shape, weight_shape):
+    factor_ifmap = output_shape[1] / Tm
+    sram_ifmap = output_shape[1] * output_shape[2] * output_shape[3] * factor_ifmap
+    factor_weight = (output_shape[2] * output_shape[3]) / (Tr * Tc)
+    sram_weight = weight_shape[0] * weight_shape[1] * weight_shape[2] * weight_shape[3] * factor_weight
+    return sram_ifmap + sram_weight
 
 # 定义 Attention 中 MatMul 的 FLOPs 计算
 def calculate_attention_matmul_flops(input_shape_1, input_shape_2):
@@ -156,6 +193,7 @@ def calculate_flops_and_latency(graph, frequency, G):
     tmacs = calculate_tmacs(frequency)  # 计算 TMACs
     total_flops = 0
     total_latency = 0
+    total_sram_access = 0
 
     for node in graph.node:
         node_name = node.name if node.name else "Unnamed Node"
@@ -186,10 +224,12 @@ def calculate_flops_and_latency(graph, frequency, G):
 
             total_flops += flops
             total_latency += latency
-
+            sram_access = calculate_conv_sram_os(output_shape, weight_shape)
+            total_sram_access += sram_access
+            
             # 打印单个节点的 FLOPs 和延时
-            if G: print(f"Node: {node_name} (Conv) - FLOPs: {flops / 1e6:.3f} MFLOPs, Latency: {latency * 1e6:.3f} us")
-            else: print(f"Node: {node_name} (Conv) - FLOPs: {flops / 1e9:.3f} GFLOPs, Latency: {latency * 1e3:.3f} ms")
+            if G: print(f"Node: {node_name} (Conv) - FLOPs: {flops / 1e6:.3f} MFLOPs, Latency: {latency * 1e6:.3f} us, SRAM access: {sram_access / 1024:.3f}KB")
+            else: print(f"Node: {node_name} (Conv) - FLOPs: {flops / 1e9:.3f} GFLOPs, Latency: {latency * 1e3:.3f} ms, SRAM access: {sram_access / (1024**2):.3f}MB")
         elif node.op_type == 'DepthToSpace':
             block_size = 1
             for attr in node.attribute:
@@ -237,12 +277,22 @@ def calculate_flops_and_latency(graph, frequency, G):
 
             # 计算 FLOPs = 最后两个维度相乘 * input_shape_1 除最后两个维度外的乘积
             flops_inner = last_dim_1 * last_dim_2 * last_dim_3
+            
+            # SRAM access
+            input_1_size = input_shape_1[-2] * input_shape_1[-1]
+            input_2_size = input_shape_2[-1] * input_shape_2[-2]
+            factor_1 = input_shape_2[-1] / Tm
+            factor_2 = input_shape_1[-2] / (Tr * Tc)
+            input_1_sram = input_1_size * factor_1
+            input_2_sram = input_2_size * factor_2
+            sram_access = input_1_sram + input_2_sram
             outer_dims = 1
             if len(input_shape_1) > 2:
                 for dim in input_shape_1[:-2]:  # 除最后两个维度外的其他维度
                     outer_dims *= dim
+                    sram_access *= dim
                     # print(last_dim_1, last_dim_2, last_dim_3, input_shape_1, outer_dims)
-
+            
             flops = flops_inner * outer_dims * 2
 
             # 计算延时
@@ -250,11 +300,13 @@ def calculate_flops_and_latency(graph, frequency, G):
             total_flops += flops
             total_latency += latency
 
+            total_sram_access += sram_access
+            # print(input_shape_1, input_shape_2, factor_1, factor_2, input_1_size, input_2_size, factor_1, factor_2, flops, sram_access, flops / sram_access)
             # 打印单个节点的 FLOPs 和延时
-            if G: print(f"Node: {node_name} ({node.op_type}) - FLOPs: {flops / 1e6:.3f} MFLOPs, Latency: {latency * 1e6:.3f} us")
-            else: print(f"Node: {node_name} ({node.op_type}) - FLOPs: {flops / 1e9:.3f} GFLOPs, Latency: {latency * 1e3:.3f} ms")
+            if G: print(f"Node: {node_name} ({node.op_type}) - FLOPs: {flops / 1e6:.3f} MFLOPs, Latency: {latency * 1e6:.3f} us, SRAM access: {sram_access / 1024:.3f}KB")
+            else: print(f"Node: {node_name} ({node.op_type}) - FLOPs: {flops / 1e9:.3f} GFLOPs, Latency: {latency * 1e3:.3f} ms, SRAM access: {sram_access / (1024**2):.3f}MB")
 
-    return total_flops, total_latency
+    return total_flops, total_latency, total_sram_access
 
 
 if __name__ == '__main__':

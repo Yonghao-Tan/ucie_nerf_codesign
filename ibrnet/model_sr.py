@@ -66,6 +66,11 @@ class IBRNetModel(object):
             flops, params = profile(self.sr_net, inputs=(input_tensor,))
             print(f"FLOPs: {flops * 2 / 1e12}TFLOPs")
             print(f"Parameters: {params / 1e6}M")
+            input_tensor = torch.randn(1, 3, 400, 400).to(device)
+            # 计算 FLOPs 和参数量
+            flops, params = profile(self.sr_net, inputs=(input_tensor,))
+            print(f"FLOPs: {flops * 2 / 1e12}TFLOPs")
+            print(f"Parameters: {params / 1e6}M")
 
         # optimizer and learning rate scheduler
         learnable_params = list(self.net_coarse.parameters())

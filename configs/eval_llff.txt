@@ -7,7 +7,7 @@ distributed = False
 
 ## dataset
 eval_dataset = llff_test
-eval_scenes = trex
+eval_scenes = fern
 
 ### TESTING
 chunk_size = 5040

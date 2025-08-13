@@ -148,6 +148,33 @@ def fused_mean_variance(x, weight):
     var = torch.sum(weight * (x - mean)**2, dim=2, keepdim=True)
     return mean, var
 
+def chai(rgb_feat, weight, base_fc, activation_func):
+    n_feat = rgb_feat.shape[-1]
+    n_views = rgb_feat.shape[-2]
+    mean, var = fused_mean_variance(rgb_feat, weight)  # [n_rays, n_samples, 1, n_feat]
+    globalfeat = torch.cat([mean, var], dim=-1)        # [n_rays, n_samples, 1, 2*n_feat]
+
+    # ---------- 优化实现 ----------
+    fc1 = base_fc[0]
+    fc2 = base_fc[2]
+
+    # 拆线性层参数
+    W_global = fc1.weight[:, :2*n_feat]   # [64, 2*n_feat]
+    W_rgb = fc1.weight[:, 2*n_feat:]      # [64, n_feat]
+    b = fc1.bias                          # [64]
+
+    # 分别线性变换
+    global_out = torch.matmul(globalfeat, W_global.t()).expand(-1, -1, n_views, -1)  # [n_rays, n_samples, n_views, 64]
+    rgb_out = torch.matmul(rgb_feat, W_rgb.t())                                      # [n_rays, n_samples, n_views, 64]
+    fc1_out = global_out + rgb_out + b  # broadcasting bias
+
+    # 激活
+    fc1_out = activation_func(fc1_out)
+
+    # 送入后续层
+    x = base_fc[2](fc1_out)  # fc2
+    x = base_fc[3](x)        # 激活
+    return x
 
 class IBRNet(nn.Module):
     def __init__(self, args, in_feat_ch=32, n_samples=64, use_moe=False, **kwargs):
@@ -218,6 +245,7 @@ class IBRNet(nn.Module):
         return sinusoid_table
 
     def forward(self, rgb_feat, ray_diff, mask, return_moe=False):
+    # def forward(self, inputs, return_moe=False):
         '''
         :param rgb_feat: rgbs and image features [n_rays, n_samples, n_views, n_feat]
         :param ray_diff: ray direction difference [n_rays, n_samples, n_views, 4], first 3 channels are directions,
@@ -225,6 +253,7 @@ class IBRNet(nn.Module):
         :param mask: mask for whether each projection is valid or not. [n_rays, n_samples, n_views, 1]
         :return: rgb and density output, [n_rays, n_samples, 4]
         '''
+        # rgb_feat, ray_diff, mask = inputs
         num_views = rgb_feat.shape[2]
         direction_feat = self.ray_dir_fc(ray_diff)
         rgb_in = rgb_feat[..., :3]
@@ -242,7 +271,8 @@ class IBRNet(nn.Module):
         globalfeat = torch.cat([mean, var], dim=-1)  # [n_rays, n_samples, 1, 2*n_feat]
 
         x = torch.cat([globalfeat.expand(-1, -1, num_views, -1), rgb_feat], dim=-1)  # [n_rays, n_samples, n_views, 3*n_feat], [n_rays, 48, 8, 105]
-        x = self.base_fc(x)
+        x = self.base_fc(x) # 其实可以把base_fc的第一个拆开n_feat和2*n_feat，分别乘加后再相加，减少flops 如果能把elu去掉可节省更多
+        # x = chai(rgb_feat, weight, self.base_fc, F.elu)
 
         x_vis = self.vis_fc(x * weight)
         x_res, vis = torch.split(x_vis, [x_vis.shape[-1]-1, 1], dim=-1)
@@ -250,12 +280,12 @@ class IBRNet(nn.Module):
         x = x + x_res
         vis = self.vis_fc2(x * vis) * mask
         weight = vis / (torch.sum(vis, dim=2, keepdim=True) + 1e-8)
-
+        
         mean, var = fused_mean_variance(x, weight) # 这里开始没有source views
         globalfeat = torch.cat([mean.squeeze(2), var.squeeze(2), weight.mean(dim=2)], dim=-1)  # [n_rays, n_samples, 32*2+1]
         globalfeat = self.geometry_fc(globalfeat)  # [n_rays, n_samples, 16]
         num_valid_obs = torch.sum(mask, dim=2)
-        globalfeat = globalfeat + self.pos_encoding
+        globalfeat = globalfeat + self.pos_encoding.to(globalfeat.device)
         globalfeat, _ = self.ray_attention(globalfeat, globalfeat, globalfeat,
                                            mask=(num_valid_obs > 1).float())  # [n_rays, n_samples, 16]
         sigma = self.out_geometry_fc(globalfeat)  # [n_rays, n_samples, 1]

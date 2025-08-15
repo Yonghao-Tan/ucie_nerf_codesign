@@ -16,6 +16,11 @@
 import torch
 from collections import OrderedDict
 import numpy as np
+from .pruning_utils import (
+    apply_source_view_pruning, 
+    apply_source_view_pruning_sparse_vectorized
+)
+
 ########################################################################################################################
 # helper functions for nerf ray rendering
 ########################################################################################################################
@@ -230,8 +235,12 @@ def render_rays(ray_batch,
                                                  ray_batch['src_cameras'],
                                                  featmaps=featmaps[0])  # [N_rays, N_samples, N_views, x]
     pixel_mask = mask[..., 0].sum(dim=2) > 1   # [N_rays, N_samples], should at least have 2 observations
+    if mask.shape[2] != 8:
+        print('Skip sv pruning!')
+        model.sv_prune = False
     if model.sv_prune:
-        raw_coarse = model.net_coarse(rgb_feat, ray_diff, mask, return_sv_prune=True)   # [N_rays, N_samples, 4]
+        blending_weights_valid, raw_coarse, mask = model.net_coarse(rgb_feat, ray_diff, mask, return_sv_prune=True)   # [N_rays, N_samples, 4]
+        mask_coarse = mask.clone()
     else:
         raw_coarse = model.net_coarse(rgb_feat, ray_diff, mask)   # [N_rays, N_samples, 4]
     outputs_coarse = raw2outputs(raw_coarse, z_vals, pixel_mask,
@@ -251,12 +260,12 @@ def render_rays(ray_batch,
                                     N_samples=N_importance, det=det)  # [N_rays, N_importance]
             z_samples = 1. / inv_z_vals
         else:
-            # take mid-points of depth samples
-            z_vals_mid = .5 * (z_vals[:, 1:] + z_vals[:, :-1])   # [N_rays, N_samples-1]
-            weights = weights[:, 1:-1]      # [N_rays, N_samples-2]
-            z_samples = sample_pdf(bins=z_vals_mid, weights=weights,
-                                   N_samples=N_importance, det=det)  # [N_rays, N_importance]
+            raise NotImplementedError("Only inverse uniform sampling is implemented for now.")
 
+        z_vals_coarse = z_vals.clone()
+        # print(z_vals_coarse.shape, mask.shape)
+        # visualize_depth_samples(z_vals_coarse[0], z_samples[0], save_path='test_dist.png')
+        # exit()
         z_vals = torch.cat((z_vals, z_samples), dim=-1)  # [N_rays, N_samples + N_importance]
         z_vals, _ = torch.sort(z_vals, dim=-1)
         H, W = ray_batch['H'], ray_batch['W']
@@ -302,8 +311,98 @@ def render_rays(ray_batch,
 
         pixel_mask = mask[..., 0].sum(dim=2) > 1  # [N_rays, N_samples]. should at least have 2 observations
         
+        # Apply source view pruning if we have coarse stage weights and mask
+        if model.sv_prune and 'blending_weights_valid' in locals() and 'mask_coarse' in locals():
+            # try:
+                # Choose pruning method based on sample_point_sparsity setting
+                if hasattr(model, 'sample_point_sparsity') and model.sample_point_sparsity:
+                    # Use sparse pruning for sample_point_sparsity mode
+                    # Follow the same edge case handling as z_vals processing
+                    H_exclude, W_exclude = H % window_size, W % window_size
+                    
+                    # Reshape all data to 2D format like z_vals processing
+                    z_vals_coarse_2d = z_vals_coarse.reshape(H, W, -1)
+                    z_samples_2d = z_samples.reshape(H, W, -1)
+                    
+                    # Get shape info for proper reshaping
+                    _, N_coarse_samples, N_views, _ = blending_weights_valid.shape
+                    _, N_coarse_samples2, N_views2, _ = mask_coarse.shape  
+                    _, N_total_samples, N_views3, _ = mask.shape
+                    
+                    blending_weights_2d = blending_weights_valid.reshape(H, W, N_coarse_samples, N_views, 1)
+                    mask_coarse_2d = mask_coarse.reshape(H, W, N_coarse_samples2, N_views2, 1)
+                    mask_2d = mask.reshape(H, W, N_total_samples, N_views3, 1)
+                    
+                    if H_exclude > 0 and W_exclude > 0:
+                        # Case a: Both H and W have remainders
+                        effective_H, effective_W = H - H_exclude, W - W_exclude
+                        z_vals_coarse_slice = z_vals_coarse_2d[:-H_exclude, :-W_exclude, :].reshape(-1, z_vals_coarse_2d.shape[-1])
+                        z_samples_slice = z_samples_2d[:-H_exclude, :-W_exclude, :].reshape(-1, z_samples_2d.shape[-1])
+                        weights_slice = blending_weights_2d[:-H_exclude, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples, N_views, 1)
+                        mask_coarse_slice = mask_coarse_2d[:-H_exclude, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples2, N_views2, 1)
+                        mask_slice = mask_2d[:-H_exclude, :-W_exclude, :, :, :].reshape(-1, N_total_samples, N_views3, 1)
+                        
+                        mask_pruned = apply_source_view_pruning_sparse_vectorized(
+                            z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
+                            effective_H, effective_W, window_size=window_size, top_k=model.sv_top_k
+                        )
+                        mask_2d[:-H_exclude, :-W_exclude, :, :, :] = mask_pruned.reshape(effective_H, effective_W, N_total_samples, N_views3, 1)
+                        print(f"Applied sparse pruning (case a): {effective_H}x{effective_W}")
+                        
+                    elif H_exclude > 0:
+                        # Case b: Only H has remainder
+                        effective_H = H - H_exclude
+                        z_vals_coarse_slice = z_vals_coarse_2d[:-H_exclude, :, :].reshape(-1, z_vals_coarse_2d.shape[-1])
+                        z_samples_slice = z_samples_2d[:-H_exclude, :, :].reshape(-1, z_samples_2d.shape[-1])
+                        weights_slice = blending_weights_2d[:-H_exclude, :, :, :, :].reshape(-1, N_coarse_samples, N_views, 1)
+                        mask_coarse_slice = mask_coarse_2d[:-H_exclude, :, :, :, :].reshape(-1, N_coarse_samples2, N_views2, 1)
+                        mask_slice = mask_2d[:-H_exclude, :, :, :, :].reshape(-1, N_total_samples, N_views3, 1)
+                        
+                        mask_pruned = apply_source_view_pruning_sparse_vectorized(
+                            z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
+                            effective_H, W, window_size=window_size, top_k=model.sv_top_k
+                        )
+                        mask_2d[:-H_exclude, :, :, :, :] = mask_pruned.reshape(effective_H, W, N_total_samples, N_views3, 1)
+                        print(f"Applied sparse pruning (case b): {effective_H}x{W}")
+                        
+                    elif W_exclude > 0:
+                        # Case c: Only W has remainder
+                        effective_W = W - W_exclude
+                        z_vals_coarse_slice = z_vals_coarse_2d[:, :-W_exclude, :].reshape(-1, z_vals_coarse_2d.shape[-1])
+                        z_samples_slice = z_samples_2d[:, :-W_exclude, :].reshape(-1, z_samples_2d.shape[-1])
+                        weights_slice = blending_weights_2d[:, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples, N_views, 1)
+                        mask_coarse_slice = mask_coarse_2d[:, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples2, N_views2, 1)
+                        mask_slice = mask_2d[:, :-W_exclude, :, :, :].reshape(-1, N_total_samples, N_views3, 1)
+                        
+                        mask_pruned = apply_source_view_pruning_sparse_vectorized(
+                            z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
+                            H, effective_W, window_size=window_size, top_k=model.sv_top_k
+                        )
+                        mask_2d[:, :-W_exclude, :, :, :] = mask_pruned.reshape(H, effective_W, N_total_samples, N_views3, 1)
+                        print(f"Applied sparse pruning (case c): {H}x{effective_W}")
+                        
+                    else:
+                        # Case d: No remainders - full processing
+                        mask = apply_source_view_pruning_sparse_vectorized(
+                            z_vals_coarse, z_samples, blending_weights_valid, mask_coarse, mask, 
+                            H, W, window_size=window_size, top_k=model.sv_top_k
+                        )
+                        print(f"Applied sparse pruning (case d): {H}x{W}")
+                        
+                    # Reshape back to 1D if needed
+                    if H_exclude > 0 or W_exclude > 0:
+                        mask = mask_2d.reshape(-1, N_total_samples, N_views3, 1)
+                        
+                else:
+                    # Use standard pruning for non-sparse mode
+                    mask = apply_source_view_pruning(
+                        z_vals_coarse, z_samples, blending_weights_valid, mask_coarse, mask, top_k=model.sv_top_k
+                    )
+                    print(f"Applied standard source view pruning: mask shape {mask.shape}")
+            # except Exception as e:
+            #     print(f"Source view pruning failed: {e}, using original mask")
+        
         if model.use_moe and H % 5 == 0:
-            # print('a', H, W, rgb_feat.shape[:2])
             rgb_feat, rgb_in, blending_weights_valid, raw_fine_org, mask = model.net_fine(rgb_feat_sampled, ray_diff, mask, return_moe=True)
             raw_fine, mof_l2_loss = model.moe(
                 H, W,
@@ -316,7 +415,6 @@ def render_rays(ray_batch,
             )
             ret['mof_l2_loss'] = mof_l2_loss
         else:
-            # print('b', H, W, rgb_feat.shape[:2])
             raw_fine = model.net_fine(rgb_feat_sampled, ray_diff, mask, return_moe=False)
             
         outputs_fine = raw2outputs(raw_fine, z_vals, pixel_mask,

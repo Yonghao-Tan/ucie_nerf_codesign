@@ -5,7 +5,7 @@
 
 test:
 	cd ./eval && \
-	CUDA_VISIBLE_DEVICES=0 python eval.py --config ../configs/eval_llff.txt --num_source_views 10
+	CUDA_VISIBLE_DEVICES=6 python eval.py --config ../configs/eval_llff.txt --num_source_views 8 --sv_prune --sample_point_sparsity --sv_top_k 4
 
 test2:
 	cd ./eval && \

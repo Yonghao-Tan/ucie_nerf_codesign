@@ -11,7 +11,7 @@ eval_scenes = fern
 
 ### TESTING
 chunk_size = 5040
-chunk_size = 10080
+# chunk_size = 10080
 
 ### RENDERING
 N_importance = 32

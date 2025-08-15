@@ -48,6 +48,7 @@ class IBRNetModel(object):
         self.sample_point_sparsity = args.sample_point_sparsity
         self.use_moe = args.use_moe
         self.sv_prune = args.sv_prune
+        self.sv_top_k = args.sv_top_k
         if self.use_moe:
             self.moe = MOE().cuda()
 

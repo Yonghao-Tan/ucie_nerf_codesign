@@ -105,8 +105,7 @@ if __name__ == '__main__':
                                       inv_uniform=args.inv_uniform,
                                       N_importance=args.N_importance,
                                       white_bkgd=args.white_bkgd,
-                                      featmaps=featmaps,
-                                      sample_point_sparsity=args.sample_point_sparsity)
+                                      featmaps=featmaps)
             gt_rgb_hr = data['rgb'][0]
             gt_rgb_hr_np = gt_rgb_hr.numpy()[None, ...]
             gt_rgb = data['rgb'][0]

@@ -37,7 +37,7 @@ class ScaledDotProductAttention(nn.Module):
             # attn = attn * mask
 
         attn = F.softmax(attn, dim=-1)
-        # attn = self.dropout(F.softmax(attn, dim=-1))
+        # attn = self.dropout(F.softmax(attn, dim=-1)) # TODO
         output = torch.matmul(attn, v)
 
         return output, attn
@@ -177,10 +177,9 @@ def chai(rgb_feat, weight, base_fc, activation_func):
     return x
 
 class IBRNet(nn.Module):
-    def __init__(self, args, in_feat_ch=32, n_samples=64, use_moe=False, **kwargs):
+    def __init__(self, args, in_feat_ch=32, n_samples=64, **kwargs):
         super(IBRNet, self).__init__()
         self.args = args
-        self.use_moe = use_moe
         self.anti_alias_pooling = args.anti_alias_pooling
         if self.anti_alias_pooling:
             self.s = nn.Parameter(torch.tensor(0.2), requires_grad=True)
@@ -244,7 +243,7 @@ class IBRNet(nn.Module):
         sinusoid_table = torch.from_numpy(sinusoid_table).to("cuda:{}".format(self.args.local_rank)).float().unsqueeze(0)
         return sinusoid_table
 
-    def forward(self, rgb_feat, ray_diff, mask, return_moe=False):
+    def forward(self, rgb_feat, ray_diff, mask, return_moe=False, return_sv_prune=False):
     # def forward(self, inputs, return_moe=False):
         '''
         :param rgb_feat: rgbs and image features [n_rays, n_samples, n_views, n_feat]
@@ -298,8 +297,10 @@ class IBRNet(nn.Module):
         blending_weights_valid = F.softmax(x, dim=2)  # color blending
         rgb_out = torch.sum(rgb_in*blending_weights_valid, dim=2)
         out = torch.cat([rgb_out, sigma_out], dim=-1)
-        if self.use_moe and return_moe:
+        if return_moe:
             return rgb_feat, rgb_in, blending_weights_valid, out, mask
+        elif return_sv_prune:
+            return blending_weights_valid, out, mask
         else:
             return out
 

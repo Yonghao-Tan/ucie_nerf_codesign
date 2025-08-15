@@ -67,9 +67,10 @@ def config_parser():
     parser.add_argument('--coarse_only', action='store_true', help='use coarse network only')
     parser.add_argument("--anti_alias_pooling", type=int, default=1, help='if use anti-alias pooling')
 
-    parser.add_argument('--use_moe', action='store_true', help='using moe post sharing network')
+    parser.add_argument('--use_moe', action='store_true', help='using fine sharing')
     parser.add_argument('--sr', action='store_true', help='using super-resolution network')
-    parser.add_argument('--sample_point_sparsity', action='store_true', help='using super-resolution network')
+    parser.add_argument('--sample_point_sparsity', action='store_true', help='using coarse sharing')
+    parser.add_argument('--sv_prune', action='store_true', help='using source view pruning')
     ########## checkpoints ##########
     parser.add_argument("--no_reload", action='store_true',
                         help='do not reload weights from saved ckpt')

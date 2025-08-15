@@ -101,16 +101,30 @@ def train():
     total_flops, total_latency, total_sram_access = calculate_flops_and_latency(graph, args.frequency, G=G)
     
     H, W = 800, 800
+    energy_flops, energy_sram = 0.718, 3.153
+    # H, W = 800, 800*0.76/6.75
+    # energy_flops, energy_sram = 0.1, 0.5
     # 输出总结果：GFLOPs 和延时 (ms)
     if G:
         print(f"Ray FLOPs: {total_flops / 1e6:.3f} MFLOPs")
         print(f"Ray SRAM access: {total_sram_access / (1024**2):.3f} MB")
-        print(f"Total FLOPs: {total_flops * H * W / 1e12:.3f} TFLOPs")
-        print(f"Total SRAM access: {total_sram_access * H * W / (1024**4):.3f} TB")
+        total_flops = total_flops * H * W
+        total_sram_access = total_sram_access * H * W
+        print(f"Total FLOPs: {total_flops / 1e12:.3f} TFLOPs")
+        print(f"Total SRAM access: {total_sram_access / (1024**4):.3f} TB")
+        pe_energy, sram_energy = total_flops * energy_flops, total_sram_access * energy_sram
+        # print(total_flops / (2*1e12), total_sram_access / (119.2*1e9))
+        total_latency = total_flops / (2*1e12)
+        total_energy = pe_energy + sram_energy
+        print(f"Estimated pe energy: {pe_energy / 1e12:.3f}J, sram energy: {sram_energy / 1e12:.3f}J, total energy: {total_energy / 1e12:.3f} J")
+        interpolation_energy = 96.13*(1024**3) * energy_sram + 0.149 * 1e12 * energy_flops * 2 # fp16=2INT8
+        print(f"Estimated interpolation energy: {interpolation_energy / 1e12:.3f} J")
         # print(f"Total Latency: {total_latency * 1e3:.3f} ms")
     else:
         print(f"Total FLOPs: {total_flops / 1e12:.3f} TFLOPs")
         print(f"Total SRAM access: {total_sram_access / (1024**4):.3f} TB")
+        total_energy = total_flops * energy_flops + total_sram_access * energy_sram
+        print(f"Estimated energy: {total_energy / 1e12:.3f} pJ")
         # print(f"Total Latency: {total_latency :.3f} s")
     # ibr_fine: 2.571, 0.? after optimization sr: 0.23
     # ibrnet:

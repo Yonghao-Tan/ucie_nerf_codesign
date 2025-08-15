@@ -166,7 +166,7 @@ def raw2outputs(raw, z_vals, mask, white_bkgd=False):
 
     return ret
 
-def share_center_to_block(tensor):
+def share_center_to_block(tensor, window_size=5):
     """
     将每个5x5 block的中心位置[2, 2]的n_samples值分享给该block的其他24个位置。
 
@@ -182,17 +182,17 @@ def share_center_to_block(tensor):
     h, w = tensor.shape[:2]
     assert tensor.dim() == 3, "输入张量必须是三维的，形状为 [rays_h, rays_w, n_samples]"
     assert h * w == tensor.size(0) * tensor.size(1), "rays 必须等于 h * w"
-    assert h % 5 == 0 and w % 5 == 0, "h 和 w 必须能被5整除"
+    assert h % window_size == 0 and w % window_size == 0, "h 和 w 必须能被5整除"
 
     # 创建一个空的输出张量
     output = torch.zeros_like(tensor)
     # 遍历每个5x5的block
-    for i in range(0, h, 5):  # 按高度方向步进5
-        for j in range(0, w, 5):  # 按宽度方向步进5
+    for i in range(0, h, window_size):  # 按高度方向步进5
+        for j in range(0, w, window_size):  # 按宽度方向步进5
             # 提取当前block的中心位置 [2, 2]
             center_value = tensor[i + 2, j + 2, :]  # 形状为 [n_samples]
             # 将中心值广播给当前block的所有位置
-            output[i:i+5, j:j+5, :] = center_value.unsqueeze(0).unsqueeze(0)  # 广播到 [5, 5, n_samples]
+            output[i:i+window_size, j:j+window_size, :] = center_value.unsqueeze(0).unsqueeze(0)  # 广播到 [5, 5, n_samples]
     return output
 
 def render_rays(ray_batch,
@@ -203,8 +203,7 @@ def render_rays(ray_batch,
                 inv_uniform=False,
                 N_importance=0,
                 det=False,
-                white_bkgd=False,
-                sample_point_sparsity=False):
+                white_bkgd=False):
     '''
     :param ray_batch: {'ray_o': [N_rays, 3] , 'ray_d': [N_rays, 3], 'view_dir': [N_rays, 2]}
     :param model:  {'net_coarse':  , 'net_fine': }
@@ -231,7 +230,10 @@ def render_rays(ray_batch,
                                                  ray_batch['src_cameras'],
                                                  featmaps=featmaps[0])  # [N_rays, N_samples, N_views, x]
     pixel_mask = mask[..., 0].sum(dim=2) > 1   # [N_rays, N_samples], should at least have 2 observations
-    raw_coarse = model.net_coarse(rgb_feat, ray_diff, mask)   # [N_rays, N_samples, 4]
+    if model.sv_prune:
+        raw_coarse = model.net_coarse(rgb_feat, ray_diff, mask, return_sv_prune=True)   # [N_rays, N_samples, 4]
+    else:
+        raw_coarse = model.net_coarse(rgb_feat, ray_diff, mask)   # [N_rays, N_samples, 4]
     outputs_coarse = raw2outputs(raw_coarse, z_vals, pixel_mask,
                                  white_bkgd=white_bkgd)
     ret['outputs_coarse'] = outputs_coarse
@@ -260,23 +262,24 @@ def render_rays(ray_batch,
         H, W = ray_batch['H'], ray_batch['W']
         assert z_vals.shape[0] >= W
         H = z_vals.shape[0] // W
-        if sample_point_sparsity: 
-            H_exclude, W_exclude = H % 5, W % 5
+        window_size = 5
+        if model.sample_point_sparsity: 
+            H_exclude, W_exclude = H % window_size, W % window_size
             z_vals_2d = z_vals.reshape(H, W, -1)
             if H_exclude > 0 and W_exclude > 0:
                 z_vals_slice = z_vals_2d[:-H_exclude, :-W_exclude, :]
                 # print('a', z_vals_slice.shape)
-                z_vals_slice = share_center_to_block(z_vals_slice)
+                z_vals_slice = share_center_to_block(z_vals_slice, window_size=window_size)
                 z_vals_2d[:H-H_exclude, :W-W_exclude, :] = z_vals_slice
             elif H_exclude > 0:
                 z_vals_slice = z_vals_2d[:-H_exclude, :, :]
                 # print('b', z_vals_slice.shape)
-                z_vals_slice = share_center_to_block(z_vals_slice)
+                z_vals_slice = share_center_to_block(z_vals_slice, window_size=window_size)
                 z_vals_2d[:H-H_exclude, :, :] = z_vals_slice
             elif W_exclude > 0:
                 z_vals_slice = z_vals_2d[:, :-W_exclude, :]
                 # print('c', z_vals_slice.shape)
-                z_vals_slice = share_center_to_block(z_vals_slice)
+                z_vals_slice = share_center_to_block(z_vals_slice, window_size=window_size)
                 z_vals_2d[:, :W-W_exclude, :] = z_vals_slice
             else:
                 # print('q', H, W, z_vals.shape[:1])

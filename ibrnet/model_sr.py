@@ -45,7 +45,9 @@ class IBRNetModel(object):
                                    in_feat_ch=self.args.fine_feat_dim,
                                    n_samples=self.args.N_samples+self.args.N_importance,
                                    use_moe=args.use_moe).to(device)
+        self.sample_point_sparsity = args.sample_point_sparsity
         self.use_moe = args.use_moe
+        self.sv_prune = args.sv_prune
         if self.use_moe:
             self.moe = MOE().cuda()
 
@@ -60,17 +62,17 @@ class IBRNetModel(object):
             self.sr_net = OmniSR(3, 3, 64, **kwargs).to(device)
             # total_params = sum(p.numel() for p in self.sr_net.parameters())
             # print(f"Total Parameters: {total_params/(1024*1024):.2f}M")
-            from thop import profile
-            input_tensor = torch.randn(1, 3, 16, 16).to(device)
-            # 计算 FLOPs 和参数量
-            flops, params = profile(self.sr_net, inputs=(input_tensor,))
-            print(f"FLOPs: {flops * 2 / 1e12}TFLOPs")
-            print(f"Parameters: {params / 1e6}M")
-            input_tensor = torch.randn(1, 3, 400, 400).to(device)
-            # 计算 FLOPs 和参数量
-            flops, params = profile(self.sr_net, inputs=(input_tensor,))
-            print(f"FLOPs: {flops * 2 / 1e12}TFLOPs")
-            print(f"Parameters: {params / 1e6}M")
+            # from thop import profile
+            # input_tensor = torch.randn(1, 3, 16, 16).to(device)
+            # # 计算 FLOPs 和参数量
+            # flops, params = profile(self.sr_net, inputs=(input_tensor,))
+            # print(f"FLOPs: {flops * 2 / 1e12}TFLOPs")
+            # print(f"Parameters: {params / 1e6}M")
+            # input_tensor = torch.randn(1, 3, 400, 400).to(device)
+            # # 计算 FLOPs 和参数量
+            # flops, params = profile(self.sr_net, inputs=(input_tensor,))
+            # print(f"FLOPs: {flops * 2 / 1e12}TFLOPs")
+            # print(f"Parameters: {params / 1e6}M")
 
         # optimizer and learning rate scheduler
         learnable_params = list(self.net_coarse.parameters())

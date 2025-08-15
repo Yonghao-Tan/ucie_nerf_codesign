@@ -109,7 +109,7 @@ def apply_source_view_pruning_original(z_vals_coarse, z_samples, blending_weight
     return final_fine_mask
 
 
-def apply_source_view_pruning_optimized(z_vals_coarse, z_samples, blending_weights_valid, coarse_mask, fine_mask, top_k=6):
+def apply_source_view_pruning_optimized(z_vals_coarse, z_samples, blending_weights_valid, coarse_mask, fine_mask, top_k=6, sample_point_group_size=None):
     """
     优化版本的source view pruning (向量化操作，显著提速)
     
@@ -200,18 +200,37 @@ def apply_source_view_pruning_optimized(z_vals_coarse, z_samples, blending_weigh
     extended_pruned_mask[ray_indices_fine, fine_sample_indices, :, :] = \
         pruned_mask_coarse[ray_indices_fine, assignment, :, :]
     
-    # Step 4: 最终mask
+    # Step 4: 应用sample point grouping (如果启用) - 在pruned mask上操作
+    if sample_point_group_size is not None and sample_point_group_size > 1:
+        # 对每个ray独立进行grouping
+        for ray_idx in range(N_rays):
+            # 计算完整的groups数量
+            num_complete_groups = N_total // sample_point_group_size
+            
+            for group_idx in range(num_complete_groups):
+                start_idx = group_idx * sample_point_group_size
+                end_idx = start_idx + sample_point_group_size
+                
+                # 使用组内第一个sample的pruning mask
+                first_sample_mask = extended_pruned_mask[ray_idx, start_idx, :, :].clone()
+                
+                # 将第一个sample的mask应用到组内所有samples
+                extended_pruned_mask[ray_idx, start_idx:end_idx, :, :] = first_sample_mask.unsqueeze(0)
+        
+        print(f"Applied sample point grouping: group_size={sample_point_group_size}, {num_complete_groups} complete groups per ray")
+    
+    # Step 5: 最终与fine_mask进行AND操作 (fine_mask是雷打不动的)
     final_fine_mask = extended_pruned_mask * fine_mask
     
     return final_fine_mask
 
 
 # 为了向后兼容，默认使用优化版本
-def apply_source_view_pruning(z_vals_coarse, z_samples, blending_weights_valid, coarse_mask, fine_mask, top_k=6):
+def apply_source_view_pruning(z_vals_coarse, z_samples, blending_weights_valid, coarse_mask, fine_mask, top_k=6, sample_point_group_size=None):
     """
     默认使用优化版本的source view pruning
     """
-    return apply_source_view_pruning_optimized(z_vals_coarse, z_samples, blending_weights_valid, coarse_mask, fine_mask, top_k)
+    return apply_source_view_pruning_optimized(z_vals_coarse, z_samples, blending_weights_valid, coarse_mask, fine_mask, top_k, sample_point_group_size)
 
 
 def apply_source_view_pruning_sparse(z_vals_coarse, z_samples, blending_weights_valid, coarse_mask, fine_mask, 
@@ -313,7 +332,7 @@ def apply_source_view_pruning_sparse(z_vals_coarse, z_samples, blending_weights_
 
 
 def apply_source_view_pruning_sparse_vectorized(z_vals_coarse, z_samples, blending_weights_valid, coarse_mask, fine_mask, 
-                                               H, W, window_size=5, top_k=6):
+                                               H, W, window_size=5, top_k=6, sample_point_group_size=None):
     """
     完全向量化的稀疏pruning版本（更快）
     支持边缘情况处理，不要求H和W必须被window_size整除
@@ -395,7 +414,7 @@ def apply_source_view_pruning_sparse_vectorized(z_vals_coarse, z_samples, blendi
             window_idx += 1
     
     # 批量复制中心mask到所有window rays
-    final_fine_mask = torch.zeros_like(fine_mask)
+    pruned_mask = torch.zeros_like(fine_mask)
     
     # 使用高级索引进行批量赋值
     for window_idx in range(num_windows):
@@ -403,9 +422,28 @@ def apply_source_view_pruning_sparse_vectorized(z_vals_coarse, z_samples, blendi
         center_mask = center_final_mask[window_idx]  # [N_total, N_views, 1]
         
         # 广播中心mask到window内所有rays
-        final_fine_mask[rays_in_window] = center_mask.unsqueeze(0).expand(window_size*window_size, -1, -1, -1)
+        pruned_mask[rays_in_window] = center_mask.unsqueeze(0).expand(window_size*window_size, -1, -1, -1)
     
-    # Step 4: 与原始fine mask进行AND运算
-    final_fine_mask = final_fine_mask * fine_mask
+    # Step 4: 应用sample point grouping (如果启用) - 在pruned mask上操作
+    if sample_point_group_size is not None and sample_point_group_size > 1:
+        N_total = pruned_mask.shape[1]
+        num_complete_groups = N_total // sample_point_group_size
+        
+        # 对每个ray独立进行grouping
+        for ray_idx in range(N_rays):
+            for group_idx in range(num_complete_groups):
+                start_idx = group_idx * sample_point_group_size
+                end_idx = start_idx + sample_point_group_size
+                
+                # 使用组内第一个sample的pruning mask
+                first_sample_mask = pruned_mask[ray_idx, start_idx, :, :].clone()
+                
+                # 将第一个sample的mask应用到组内所有samples
+                pruned_mask[ray_idx, start_idx:end_idx, :, :] = first_sample_mask.unsqueeze(0)
+        
+        print(f"Applied sparse sample point grouping: group_size={sample_point_group_size}, {num_complete_groups} complete groups per ray")
+    
+    # Step 5: 最终与fine_mask进行AND操作 (fine_mask是雷打不动的)
+    final_fine_mask = pruned_mask * fine_mask
     
     return final_fine_mask

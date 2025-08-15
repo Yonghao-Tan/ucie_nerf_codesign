@@ -11,6 +11,9 @@ ibrnet/
 │   └── benchmark.py                    # 性能基准测试
 ├── render_ray.py                       # 主渲染函数 (已集成pruning)
 └── test_sparse_pruning.py             # 稀疏pruning测试脚本
+└── test_sample_point_grouping.py      # Sample point grouping测试脚本
+└── test_sparse_grouping.py            # 稀疏+grouping组合测试脚本
+└── test_grouping_direct.py            # 直接grouping逻辑测试脚本
 ```
 
 ## 功能模块
@@ -26,6 +29,7 @@ ibrnet/
 - 向量化操作，消除大部分循环
 - 10-100倍性能提升
 - 标准pruning的推荐实现
+- **新增**: 支持sample point grouping功能
 
 #### `apply_source_view_pruning_sparse()` - 稀疏版本
 - 专用于`sample_point_sparsity`模式
@@ -36,8 +40,33 @@ ibrnet/
 - 稀疏版本的完全向量化实现  
 - 最高性能的实现
 - 实测加速比: 4-25倍
+- **新增**: 支持sample point grouping功能
 
-### 2. 可视化工具
+### 2. Sample Point Grouping 功能
+
+#### 功能概述
+- 将连续的sample points按指定大小分组
+- 组内所有samples共享第一个sample的pruning mask
+- 支持与所有pruning方法结合使用
+
+#### 参数说明
+- `sample_point_group_size`: 分组大小
+  - `None` 或 `1`: 不分组（默认行为）
+  - `4`: 每4个连续sample points为一组
+  - 更大值: 更粗粒度的grouping
+
+#### 工作流程
+1. 计算每个sample point的pruning mask
+2. 按group_size将连续samples分组
+3. 每组内使用第一个sample的mask
+4. 与fine_mask进行AND操作（fine_mask优先）
+
+#### 注意事项
+- Fine_mask具有最高优先级，可能导致组内最终结果不一致
+- 这种不一致性是设计行为，确保fine_mask约束得到保持
+- 只处理完整的groups，剩余samples保持原样
+
+### 3. 可视化工具
 
 #### `visualize_depth_samples()`
 - 可视化coarse和fine采样点分布

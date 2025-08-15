@@ -49,6 +49,7 @@ class IBRNetModel(object):
         self.use_moe = args.use_moe
         self.sv_prune = args.sv_prune
         self.sv_top_k = args.sv_top_k
+        self.sample_point_group_size = args.sample_point_group_size
         if self.use_moe:
             self.moe = MOE().cuda()
 

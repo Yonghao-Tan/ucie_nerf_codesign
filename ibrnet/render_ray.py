@@ -333,6 +333,9 @@ def render_rays(ray_batch,
                     mask_coarse_2d = mask_coarse.reshape(H, W, N_coarse_samples2, N_views2, 1)
                     mask_2d = mask.reshape(H, W, N_total_samples, N_views3, 1)
                     
+                    # Get sample_point_grouping setting
+                    sample_point_group_size = getattr(model, 'sample_point_group_size', None)
+                    
                     if H_exclude > 0 and W_exclude > 0:
                         # Case a: Both H and W have remainders
                         effective_H, effective_W = H - H_exclude, W - W_exclude
@@ -344,10 +347,11 @@ def render_rays(ray_batch,
                         
                         mask_pruned = apply_source_view_pruning_sparse_vectorized(
                             z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
-                            effective_H, effective_W, window_size=window_size, top_k=model.sv_top_k
+                            effective_H, effective_W, window_size=window_size, top_k=model.sv_top_k,
+                            sample_point_group_size=sample_point_group_size
                         )
                         mask_2d[:-H_exclude, :-W_exclude, :, :, :] = mask_pruned.reshape(effective_H, effective_W, N_total_samples, N_views3, 1)
-                        print(f"Applied sparse pruning (case a): {effective_H}x{effective_W}")
+                        print(f"Applied sparse pruning (case a): {effective_H}x{effective_W}, group_size={sample_point_group_size}")
                         
                     elif H_exclude > 0:
                         # Case b: Only H has remainder
@@ -360,10 +364,11 @@ def render_rays(ray_batch,
                         
                         mask_pruned = apply_source_view_pruning_sparse_vectorized(
                             z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
-                            effective_H, W, window_size=window_size, top_k=model.sv_top_k
+                            effective_H, W, window_size=window_size, top_k=model.sv_top_k,
+                            sample_point_group_size=sample_point_group_size
                         )
                         mask_2d[:-H_exclude, :, :, :, :] = mask_pruned.reshape(effective_H, W, N_total_samples, N_views3, 1)
-                        print(f"Applied sparse pruning (case b): {effective_H}x{W}")
+                        print(f"Applied sparse pruning (case b): {effective_H}x{W}, group_size={sample_point_group_size}")
                         
                     elif W_exclude > 0:
                         # Case c: Only W has remainder
@@ -376,18 +381,20 @@ def render_rays(ray_batch,
                         
                         mask_pruned = apply_source_view_pruning_sparse_vectorized(
                             z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
-                            H, effective_W, window_size=window_size, top_k=model.sv_top_k
+                            H, effective_W, window_size=window_size, top_k=model.sv_top_k,
+                            sample_point_group_size=sample_point_group_size
                         )
                         mask_2d[:, :-W_exclude, :, :, :] = mask_pruned.reshape(H, effective_W, N_total_samples, N_views3, 1)
-                        print(f"Applied sparse pruning (case c): {H}x{effective_W}")
+                        # print(f"Applied sparse pruning (case c): {H}x{effective_W}, group_size={sample_point_group_size}")
                         
                     else:
                         # Case d: No remainders - full processing
                         mask = apply_source_view_pruning_sparse_vectorized(
                             z_vals_coarse, z_samples, blending_weights_valid, mask_coarse, mask, 
-                            H, W, window_size=window_size, top_k=model.sv_top_k
+                            H, W, window_size=window_size, top_k=model.sv_top_k,
+                            sample_point_group_size=sample_point_group_size
                         )
-                        print(f"Applied sparse pruning (case d): {H}x{W}")
+                        print(f"Applied sparse pruning (case d): {H}x{W}, group_size={sample_point_group_size}")
                         
                     # Reshape back to 1D if needed
                     if H_exclude > 0 or W_exclude > 0:
@@ -395,10 +402,14 @@ def render_rays(ray_batch,
                         
                 else:
                     # Use standard pruning for non-sparse mode
+                    # Get sample_point_grouping setting for standard pruning too
+                    sample_point_group_size = getattr(model, 'sample_point_group_size', None)
+                    
                     mask = apply_source_view_pruning(
-                        z_vals_coarse, z_samples, blending_weights_valid, mask_coarse, mask, top_k=model.sv_top_k
+                        z_vals_coarse, z_samples, blending_weights_valid, mask_coarse, mask, 
+                        top_k=model.sv_top_k, sample_point_group_size=sample_point_group_size
                     )
-                    print(f"Applied standard source view pruning: mask shape {mask.shape}")
+                    print(f"Applied standard source view pruning: mask shape {mask.shape}, group_size={sample_point_group_size}")
             # except Exception as e:
             #     print(f"Source view pruning failed: {e}, using original mask")
         

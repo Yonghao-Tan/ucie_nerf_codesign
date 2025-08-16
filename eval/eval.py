@@ -180,7 +180,7 @@ if __name__ == '__main__':
                 interpo_output = torch.nn.functional.interpolate(sr_input, scale_factor=2, mode='bicubic', align_corners=False).squeeze(0).permute(1, 2, 0)
                 # sr_output = model.sr_net(sr_input)
                 
-                tile = 12
+                tile = 16
                 tile_overlap = 0
                 scale = 2
                 b, c, h, w = sr_input.size()

@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""
-大规模数据集批量测试脚本
-在LLFF测试数据集上验证tile替换方法的效果
-"""
-
 import os
 import sys
 import numpy as np
@@ -15,6 +10,10 @@ import pandas as pd
 from pathlib import Path
 import time
 from tqdm import tqdm
+import torch
+import torch.nn as nn
+import torchvision.models as models
+import torchvision.transforms as transforms
 
 # 添加当前脚本目录到路径，以便导入我们的预测器
 sys.path.append('/home/ytanaz/access/IBRNet/test_sr/scripts')
@@ -37,13 +36,51 @@ class BatchTileReplacementTester:
         self.fine_tile_size = 16  # 在fine分辨率上的tile大小
         
         # 预设阈值
-        self.canny_threshold = 0.094  # 高分辨率方法的阈值
-        self.canny_threshold_lowres = 0.160  # 低分辨率校正后的阈值
+        self.canny_threshold = 0.160  # 高分辨率方法的阈值
+        self.canny_threshold_lowres = 0.250  # 低分辨率校正后的阈值
+        
+        # 初始化MobileNetV2预测器
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.mobilenet_predictor = self._init_mobilenet_predictor()
+        self.mobilenet_threshold = 1.80  # MobileNetV2高分辨率阈值（调整以控制替换率~100）
+        self.mobilenet_threshold_lowres = 2.20  # MobileNetV2低分辨率阈值（调整以控制替换率~100）
         
         print(f"🔍 批量测试器初始化")
         print(f"LLFF测试根目录: {self.llff_test_root}")
         print(f"Canny高分辨率阈值: {self.canny_threshold}")
         print(f"Canny低分辨率阈值: {self.canny_threshold_lowres}")
+        print(f"MobileNet高分辨率阈值: {self.mobilenet_threshold}")
+        print(f"MobileNet低分辨率阈值: {self.mobilenet_threshold_lowres}")
+        print(f"计算设备: {self.device}")
+    
+    def _init_mobilenet_predictor(self):
+        """初始化MobileNetV2复杂度预测器"""
+        try:
+            # 加载MobileNetV2并提取前几层
+            mobilenet = models.mobilenet_v2(pretrained=True)
+            feature_extractor = nn.Sequential(
+                *list(mobilenet.features.children())[:4]  # 前4层，轻量级
+            ).to(self.device)
+            
+            # 冻结预训练权重
+            feature_extractor.eval()
+            for param in feature_extractor.parameters():
+                param.requires_grad = False
+            
+            # ImageNet标准化
+            normalize = transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )
+            
+            return {
+                'feature_extractor': feature_extractor,
+                'normalize': normalize
+            }
+        except Exception as e:
+            print(f"⚠️ MobileNetV2初始化失败: {e}")
+            print("将跳过MobileNetV2测试")
+            return None
     
     def get_scenes(self):
         """获取所有测试场景"""
@@ -77,6 +114,60 @@ class BatchTileReplacementTester:
         edges = cv2.Canny(gray, 50, 150)
         edge_ratio = np.sum(edges > 0) / edges.size
         return edge_ratio
+    
+    def extract_mobilenet_score(self, tile):
+        """提取MobileNetV2复杂度得分"""
+        if self.mobilenet_predictor is None:
+            return 0.0  # 如果MobileNet不可用，返回默认值
+            
+        try:
+            # 预处理tile
+            if tile.max() > 1.0:
+                tile = tile.astype(np.float32) / 255.0
+            
+            # 转换为torch tensor
+            if len(tile.shape) == 3:  # RGB
+                tensor = torch.from_numpy(tile).permute(2, 0, 1)  # HWC -> CHW
+            else:  # 灰度图
+                tensor = torch.from_numpy(tile).unsqueeze(0)  # 添加通道维度
+                tensor = tensor.repeat(3, 1, 1)  # 转换为3通道
+            
+            # 标准化
+            tensor = self.mobilenet_predictor['normalize'](tensor)
+            
+            # 添加batch维度
+            tensor = tensor.unsqueeze(0).to(self.device)  # [1, 3, H, W]
+            
+            with torch.no_grad():
+                # 特征提取
+                features = self.mobilenet_predictor['feature_extractor'](tensor)
+                
+                # 复杂度指标计算
+                spatial_variance = torch.var(features, dim=[2, 3]).mean()
+                channel_means = torch.mean(features, dim=[2, 3])
+                channel_diversity = torch.std(channel_means)
+                edge_response = torch.norm(features, dim=1).mean()
+                activation_sparsity = torch.mean(torch.abs(features))
+                
+                # 梯度幅度
+                grad_x = torch.abs(features[:, :, 1:, :] - features[:, :, :-1, :]).mean()
+                grad_y = torch.abs(features[:, :, :, 1:] - features[:, :, :, :-1]).mean()
+                gradient_magnitude = (grad_x + grad_y) / 2
+                
+                # 综合复杂度得分
+                complexity_score = (
+                    0.30 * spatial_variance.item() +
+                    0.25 * channel_diversity.item() + 
+                    0.20 * edge_response.item() +
+                    0.15 * activation_sparsity.item() +
+                    0.10 * gradient_magnitude.item()
+                )
+                
+                return complexity_score
+                
+        except Exception as e:
+            print(f"MobileNet预测错误: {e}")
+            return 0.0
     
     def random_replacement_method(self, sr_img, org_img, num_tiles_to_replace):
         """随机替换指定数量的tiles"""
@@ -168,20 +259,101 @@ class BatchTileReplacementTester:
         
         return hybrid_img, replaced_tiles
     
+    def mobilenet_highres_method(self, sr_img, org_img, threshold=None):
+        """高分辨率MobileNetV2方法"""
+        if threshold is None:
+            threshold = self.mobilenet_threshold
+            
+        if self.mobilenet_predictor is None:
+            print("⚠️ MobileNetV2不可用，跳过此方法")
+            return sr_img.copy(), 0
+            
+        h, w = sr_img.shape[:2]
+        tile_h, tile_w = h // self.tile_size, w // self.tile_size
+        
+        hybrid_img = sr_img.copy()
+        replaced_tiles = 0
+        
+        for i in range(tile_h):
+            for j in range(tile_w):
+                h_start, h_end = i * self.tile_size, (i + 1) * self.tile_size
+                w_start, w_end = j * self.tile_size, (j + 1) * self.tile_size
+                
+                sr_tile = sr_img[h_start:h_end, w_start:w_end]
+                complexity_score = self.extract_mobilenet_score(sr_tile)
+                
+                if complexity_score > threshold:
+                    hybrid_img[h_start:h_end, w_start:w_end] = org_img[h_start:h_end, w_start:w_end]
+                    replaced_tiles += 1
+        
+        return hybrid_img, replaced_tiles
+    
+    def mobilenet_lowres_method(self, fine_img, sr_img, org_img, threshold=None):
+        """低分辨率MobileNetV2方法"""
+        if threshold is None:
+            threshold = self.mobilenet_threshold_lowres  # 使用校准后的低分辨率阈值
+            
+        if self.mobilenet_predictor is None:
+            print("⚠️ MobileNetV2不可用，跳过此方法")
+            return sr_img.copy(), 0
+            
+        # 在fine分辨率上进行分析
+        h_fine, w_fine = fine_img.shape[:2]
+        tile_h, tile_w = h_fine // self.fine_tile_size, w_fine // self.fine_tile_size
+        
+        # 创建fine分辨率的掩码
+        fine_mask = np.zeros((h_fine, w_fine), dtype=bool)
+        replaced_tiles = 0
+        
+        for i in range(tile_h):
+            for j in range(tile_w):
+                h_start = i * self.fine_tile_size
+                h_end = (i + 1) * self.fine_tile_size
+                w_start = j * self.fine_tile_size
+                w_end = (j + 1) * self.fine_tile_size
+                
+                fine_tile = fine_img[h_start:h_end, w_start:w_end]
+                complexity_score = self.extract_mobilenet_score(fine_tile)
+                
+                if complexity_score > threshold:
+                    fine_mask[h_start:h_end, w_start:w_end] = True
+                    replaced_tiles += 1
+        
+        # 将掩码上采样到SR分辨率
+        sr_mask = cv2.resize(
+            fine_mask.astype(np.uint8), 
+            (sr_img.shape[1], sr_img.shape[0]), 
+            interpolation=cv2.INTER_NEAREST
+        ).astype(bool)
+        
+        # 在SR图像上应用掩码
+        hybrid_img = sr_img.copy()
+        hybrid_img[sr_mask] = org_img[sr_mask]
+        
+        return hybrid_img, replaced_tiles
+    
     def test_single_image(self, scene, img_idx):
         """测试单张图像的所有方法"""
         results = {
             'scene': scene,
             'img_idx': img_idx,
             'sr_psnr': 0,
-            'random_100_psnr': 0,
-            'random_100_improvement': 0,
+            'total_tiles': 0,
+            'random_max_psnr': 0,
+            'random_max_improvement': 0,
+            'random_max_tiles': 0,
             'canny_highres_psnr': 0,
             'canny_highres_improvement': 0,
             'canny_highres_tiles': 0,
             'canny_lowres_psnr': 0,
             'canny_lowres_improvement': 0,
-            'canny_lowres_tiles': 0
+            'canny_lowres_tiles': 0,
+            'mobilenet_highres_psnr': 0,
+            'mobilenet_highres_improvement': 0,
+            'mobilenet_highres_tiles': 0,
+            'mobilenet_lowres_psnr': 0,
+            'mobilenet_lowres_improvement': 0,
+            'mobilenet_lowres_tiles': 0
         }
         
         try:
@@ -204,15 +376,15 @@ class BatchTileReplacementTester:
             if gt_img.shape != sr_img.shape:
                 gt_img = cv2.resize(gt_img, (sr_img.shape[1], sr_img.shape[0]))
             
+            # 计算总tile数
+            h, w = sr_img.shape[:2]
+            tile_h, tile_w = h // self.tile_size, w // self.tile_size
+            total_tiles = tile_h * tile_w
+            results['total_tiles'] = total_tiles
+            
             # 计算原始SR PSNR
             sr_psnr = psnr(gt_img, sr_img)
             results['sr_psnr'] = sr_psnr
-            
-            # 1. 随机替换100个tiles
-            random_img, _ = self.random_replacement_method(sr_img, org_img, 100)
-            random_psnr = psnr(gt_img, random_img)
-            results['random_100_psnr'] = random_psnr
-            results['random_100_improvement'] = random_psnr - sr_psnr
             
             # 2. 高分辨率Canny方法
             canny_hr_img, canny_hr_tiles = self.canny_highres_method(sr_img, org_img)
@@ -227,6 +399,31 @@ class BatchTileReplacementTester:
             results['canny_lowres_psnr'] = canny_lr_psnr
             results['canny_lowres_improvement'] = canny_lr_psnr - sr_psnr
             results['canny_lowres_tiles'] = canny_lr_tiles
+            
+            # 4. 高分辨率MobileNetV2方法
+            mobilenet_hr_tiles = 0
+            mobilenet_lr_tiles = 0
+            if self.mobilenet_predictor is not None:
+                mobilenet_hr_img, mobilenet_hr_tiles = self.mobilenet_highres_method(sr_img, org_img)
+                mobilenet_hr_psnr = psnr(gt_img, mobilenet_hr_img)
+                results['mobilenet_highres_psnr'] = mobilenet_hr_psnr
+                results['mobilenet_highres_improvement'] = mobilenet_hr_psnr - sr_psnr
+                results['mobilenet_highres_tiles'] = mobilenet_hr_tiles
+                
+                # 5. 低分辨率MobileNetV2方法
+                mobilenet_lr_img, mobilenet_lr_tiles = self.mobilenet_lowres_method(fine_img, sr_img, org_img)
+                mobilenet_lr_psnr = psnr(gt_img, mobilenet_lr_img)
+                results['mobilenet_lowres_psnr'] = mobilenet_lr_psnr
+                results['mobilenet_lowres_improvement'] = mobilenet_lr_psnr - sr_psnr
+                results['mobilenet_lowres_tiles'] = mobilenet_lr_tiles
+            
+            # 1. 随机替换（使用所有方法中的最大tile数作为基线）
+            max_tiles = max(canny_hr_tiles, canny_lr_tiles, mobilenet_hr_tiles, mobilenet_lr_tiles)
+            random_img, _ = self.random_replacement_method(sr_img, org_img, max_tiles)
+            random_psnr = psnr(gt_img, random_img)
+            results['random_max_psnr'] = random_psnr
+            results['random_max_improvement'] = random_psnr - sr_psnr
+            results['random_max_tiles'] = max_tiles
             
         except Exception as e:
             print(f"错误处理 {scene}/{img_idx}: {e}")
@@ -285,41 +482,86 @@ class BatchTileReplacementTester:
         # 计算平均值
         avg_results = {
             'SR原始PSNR': df['sr_psnr'].mean(),
-            '随机100tiles': df['random_100_improvement'].mean(),
+            '随机最大tiles': df['random_max_improvement'].mean(),
             'Canny高分辨率': df['canny_highres_improvement'].mean(),
             'Canny低分辨率': df['canny_lowres_improvement'].mean()
         }
         
+        # 如果有MobileNetV2结果，添加到平均值中
+        if self.mobilenet_predictor is not None and 'mobilenet_highres_improvement' in df.columns:
+            avg_results['MobileNet高分辨率'] = df['mobilenet_highres_improvement'].mean()
+            avg_results['MobileNet低分辨率'] = df['mobilenet_lowres_improvement'].mean()
+        
         print(f"\n📈 平均PSNR提升 (dB):")
-        print(f"{'方法':<15} {'PSNR提升':<10} {'标准差':<10}")
-        print("-" * 40)
-        print(f"{'随机100tiles':<15} {avg_results['随机100tiles']:<9.3f} {df['random_100_improvement'].std():<9.3f}")
-        print(f"{'Canny高分辨率':<15} {avg_results['Canny高分辨率']:<9.3f} {df['canny_highres_improvement'].std():<9.3f}")
-        print(f"{'Canny低分辨率':<15} {avg_results['Canny低分辨率']:<9.3f} {df['canny_lowres_improvement'].std():<9.3f}")
+        print(f"{'方法':<20} {'PSNR提升':<10} {'标准差':<10}")
+        print("-" * 45)
+        print(f"{'随机最大tiles':<20} {avg_results['随机最大tiles']:<9.3f} {df['random_max_improvement'].std():<9.3f}")
+        print(f"{'Canny高分辨率':<20} {avg_results['Canny高分辨率']:<9.3f} {df['canny_highres_improvement'].std():<9.3f}")
+        print(f"{'Canny低分辨率':<20} {avg_results['Canny低分辨率']:<9.3f} {df['canny_lowres_improvement'].std():<9.3f}")
+        
+        if 'MobileNet高分辨率' in avg_results:
+            print(f"{'MobileNet高分辨率':<20} {avg_results['MobileNet高分辨率']:<9.3f} {df['mobilenet_highres_improvement'].std():<9.3f}")
+            print(f"{'MobileNet低分辨率':<20} {avg_results['MobileNet低分辨率']:<9.3f} {df['mobilenet_lowres_improvement'].std():<9.3f}")
         
         # 替换tiles统计
         print(f"\n🔧 平均替换Tiles数:")
+        avg_total_tiles = df['total_tiles'].mean()
+        print(f"平均总tiles数: {avg_total_tiles:.0f} tiles")
+        print(f"随机替换: {df['random_max_tiles'].mean():.1f} tiles (基线)")
         print(f"Canny高分辨率: {df['canny_highres_tiles'].mean():.1f} tiles")
         print(f"Canny低分辨率: {df['canny_lowres_tiles'].mean():.1f} tiles")
         
+        if 'mobilenet_highres_tiles' in df.columns and self.mobilenet_predictor is not None:
+            print(f"MobileNet高分辨率: {df['mobilenet_highres_tiles'].mean():.1f} tiles")
+            print(f"MobileNet低分辨率: {df['mobilenet_lowres_tiles'].mean():.1f} tiles")
+        
+        # 替换比例统计
+        print(f"\n📏 替换比例(替换tiles/总tiles):")
+        print(f"随机替换: {df['random_max_tiles'].mean()/avg_total_tiles:.1%}")
+        print(f"Canny高分辨率: {df['canny_highres_tiles'].mean()/avg_total_tiles:.1%}")
+        print(f"Canny低分辨率: {df['canny_lowres_tiles'].mean()/avg_total_tiles:.1%}")
+        
+        if 'mobilenet_highres_tiles' in df.columns and self.mobilenet_predictor is not None:
+            print(f"MobileNet高分辨率: {df['mobilenet_highres_tiles'].mean()/avg_total_tiles:.1%}")
+            print(f"MobileNet低分辨率: {df['mobilenet_lowres_tiles'].mean()/avg_total_tiles:.1%}")
+        
         # 按场景分析
         print(f"\n🎬 按场景分析:")
-        scene_stats = df.groupby('scene').agg({
+        scene_columns = {
             'sr_psnr': 'mean',
-            'random_100_improvement': 'mean',
+            'total_tiles': 'mean',
+            'random_max_improvement': 'mean',
+            'random_max_tiles': 'mean',
             'canny_highres_improvement': 'mean',
             'canny_lowres_improvement': 'mean',
             'canny_highres_tiles': 'mean',
             'canny_lowres_tiles': 'mean'
-        })
+        }
+        
+        # 如果有MobileNetV2结果，添加到分析中
+        if self.mobilenet_predictor is not None and 'mobilenet_highres_improvement' in df.columns:
+            scene_columns.update({
+                'mobilenet_highres_improvement': 'mean',
+                'mobilenet_lowres_improvement': 'mean',
+                'mobilenet_highres_tiles': 'mean',
+                'mobilenet_lowres_tiles': 'mean'
+            })
+        
+        scene_stats = df.groupby('scene').agg(scene_columns)
         
         for scene in scene_stats.index:
             stats = scene_stats.loc[scene]
+            total_tiles = stats['total_tiles']
             print(f"\n{scene}:")
             print(f"  平均SR PSNR: {stats['sr_psnr']:.2f} dB")
-            print(f"  随机100tiles: +{stats['random_100_improvement']:.3f} dB")
-            print(f"  Canny高分辨率: +{stats['canny_highres_improvement']:.3f} dB ({stats['canny_highres_tiles']:.1f} tiles)")
-            print(f"  Canny低分辨率: +{stats['canny_lowres_improvement']:.3f} dB ({stats['canny_lowres_tiles']:.1f} tiles)")
+            print(f"  总tiles数: {total_tiles:.0f} tiles")
+            print(f"  随机最大tiles: +{stats['random_max_improvement']:.3f} dB ({stats['random_max_tiles']:.1f} tiles, {stats['random_max_tiles']/total_tiles:.1%})")
+            print(f"  Canny高分辨率: +{stats['canny_highres_improvement']:.3f} dB ({stats['canny_highres_tiles']:.1f} tiles, {stats['canny_highres_tiles']/total_tiles:.1%})")
+            print(f"  Canny低分辨率: +{stats['canny_lowres_improvement']:.3f} dB ({stats['canny_lowres_tiles']:.1f} tiles, {stats['canny_lowres_tiles']/total_tiles:.1%})")
+            
+            if 'mobilenet_highres_improvement' in stats:
+                print(f"  MobileNet高分辨率: +{stats['mobilenet_highres_improvement']:.3f} dB ({stats['mobilenet_highres_tiles']:.1f} tiles, {stats['mobilenet_highres_tiles']/total_tiles:.1%})")
+                print(f"  MobileNet低分辨率: +{stats['mobilenet_lowres_improvement']:.3f} dB ({stats['mobilenet_lowres_tiles']:.1f} tiles, {stats['mobilenet_lowres_tiles']/total_tiles:.1%})")
         
         return df, avg_results
     
@@ -342,15 +584,42 @@ class BatchTileReplacementTester:
             f.write(f"测试场景: {', '.join(df['scene'].unique())}\n\n")
             
             f.write("平均PSNR提升结果:\n")
-            f.write(f"随机100tiles替换: +{avg_results['随机100tiles']:.3f} dB\n")
+            f.write(f"随机最大tiles替换: +{avg_results['随机最大tiles']:.3f} dB\n")
             f.write(f"Canny高分辨率方法: +{avg_results['Canny高分辨率']:.3f} dB\n")
-            f.write(f"Canny低分辨率方法: +{avg_results['Canny低分辨率']:.3f} dB\n\n")
+            f.write(f"Canny低分辨率方法: +{avg_results['Canny低分辨率']:.3f} dB\n")
             
-            f.write("关键结论:\n")
-            canny_hr_vs_random = avg_results['Canny高分辨率'] / avg_results['随机100tiles']
-            canny_lr_vs_random = avg_results['Canny低分辨率'] / avg_results['随机100tiles']
+            if 'MobileNet高分辨率' in avg_results:
+                f.write(f"MobileNet高分辨率方法: +{avg_results['MobileNet高分辨率']:.3f} dB\n")
+                f.write(f"MobileNet低分辨率方法: +{avg_results['MobileNet低分辨率']:.3f} dB\n")
+            
+            # 添加替换比例信息
+            avg_total_tiles = df['total_tiles'].mean()
+            f.write(f"\n替换比例统计(平均总tiles: {avg_total_tiles:.0f}):\n")
+            f.write(f"随机替换: {df['random_max_tiles'].mean()/avg_total_tiles:.1%}\n")
+            f.write(f"Canny高分辨率: {df['canny_highres_tiles'].mean()/avg_total_tiles:.1%}\n")
+            f.write(f"Canny低分辨率: {df['canny_lowres_tiles'].mean()/avg_total_tiles:.1%}\n")
+            
+            if 'mobilenet_highres_tiles' in df.columns:
+                f.write(f"MobileNet高分辨率: {df['mobilenet_highres_tiles'].mean()/avg_total_tiles:.1%}\n")
+                f.write(f"MobileNet低分辨率: {df['mobilenet_lowres_tiles'].mean()/avg_total_tiles:.1%}\n")
+            
+            f.write("\n关键结论:\n")
+            canny_hr_vs_random = avg_results['Canny高分辨率'] / avg_results['随机最大tiles']
+            canny_lr_vs_random = avg_results['Canny低分辨率'] / avg_results['随机最大tiles']
             f.write(f"Canny高分辨率 vs 随机: {canny_hr_vs_random:.2f}倍效果\n")
             f.write(f"Canny低分辨率 vs 随机: {canny_lr_vs_random:.2f}倍效果\n")
+            
+            if 'MobileNet高分辨率' in avg_results:
+                mobilenet_hr_vs_random = avg_results['MobileNet高分辨率'] / avg_results['随机最大tiles']
+                mobilenet_lr_vs_random = avg_results['MobileNet低分辨率'] / avg_results['随机最大tiles']
+                f.write(f"MobileNet高分辨率 vs 随机: {mobilenet_hr_vs_random:.2f}倍效果\n")
+                f.write(f"MobileNet低分辨率 vs 随机: {mobilenet_lr_vs_random:.2f}倍效果\n")
+                
+                mobilenet_hr_vs_canny_hr = avg_results['MobileNet高分辨率'] / avg_results['Canny高分辨率']
+                mobilenet_lr_vs_canny_lr = avg_results['MobileNet低分辨率'] / avg_results['Canny低分辨率']
+                f.write(f"MobileNet高分辨率 vs Canny高分辨率: {mobilenet_hr_vs_canny_hr:.2f}倍效果\n")
+                f.write(f"MobileNet低分辨率 vs Canny低分辨率: {mobilenet_lr_vs_canny_lr:.2f}倍效果\n")
+            
             f.write(f"低分辨率方法计算量减少: 75%\n")
         
         print(f"📋 总结报告保存到: {report_path}")
@@ -363,31 +632,59 @@ class BatchTileReplacementTester:
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
         
         # 1. PSNR improvement comparison
-        methods = ['Random 100 tiles', 'Canny High Resolution', 'Canny Low Resolution']
+        methods = ['Random Max Tiles', 'Canny High Resolution', 'Canny Low Resolution']
         improvements = [
-            df['random_100_improvement'].mean(),
+            df['random_max_improvement'].mean(),
             df['canny_highres_improvement'].mean(),
             df['canny_lowres_improvement'].mean()
         ]
         
-        ax1.bar(methods, improvements, color=['gray', 'blue', 'red'])
+        # 如果有MobileNetV2结果，添加到对比中
+        if self.mobilenet_predictor is not None and 'mobilenet_highres_improvement' in df.columns:
+            methods.extend(['MobileNet High Resolution', 'MobileNet Low Resolution'])
+            improvements.extend([
+                df['mobilenet_highres_improvement'].mean(),
+                df['mobilenet_lowres_improvement'].mean()
+            ])
+        
+        colors = ['gray', 'blue', 'red', 'green', 'orange'][:len(methods)]
+        ax1.bar(methods, improvements, color=colors)
         ax1.set_ylabel('Average PSNR Improvement (dB)')
         ax1.set_title('PSNR Improvement Comparison of Different Methods')
         ax1.grid(True, alpha=0.3)
+        ax1.tick_params(axis='x', rotation=45)
         
         # 2. PSNR improvement by scene
-        scene_stats = df.groupby('scene').agg({
+        scene_columns = {
             'canny_highres_improvement': 'mean',
             'canny_lowres_improvement': 'mean'
-        })
+        }
+        
+        if self.mobilenet_predictor is not None and 'mobilenet_highres_improvement' in df.columns:
+            scene_columns.update({
+                'mobilenet_highres_improvement': 'mean',
+                'mobilenet_lowres_improvement': 'mean'
+            })
+        
+        scene_stats = df.groupby('scene').agg(scene_columns)
         
         x = np.arange(len(scene_stats.index))
-        width = 0.35
+        width = 0.15 if len(scene_columns) > 2 else 0.35
         
-        ax2.bar(x - width/2, scene_stats['canny_highres_improvement'], width, 
-                label='Canny High Resolution', color='blue', alpha=0.7)
-        ax2.bar(x + width/2, scene_stats['canny_lowres_improvement'], width,
-                label='Canny Low Resolution', color='red', alpha=0.7)
+        bars = []
+        labels = ['Canny High Res', 'Canny Low Res']
+        colors = ['blue', 'red']
+        
+        bars.append(ax2.bar(x - width, scene_stats['canny_highres_improvement'], width, 
+                label='Canny High Resolution', color='blue', alpha=0.7))
+        bars.append(ax2.bar(x, scene_stats['canny_lowres_improvement'], width,
+                label='Canny Low Resolution', color='red', alpha=0.7))
+        
+        if 'mobilenet_highres_improvement' in scene_stats.columns:
+            bars.append(ax2.bar(x + width, scene_stats['mobilenet_highres_improvement'], width,
+                    label='MobileNet High Resolution', color='green', alpha=0.7))
+            bars.append(ax2.bar(x + 2*width, scene_stats['mobilenet_lowres_improvement'], width,
+                    label='MobileNet Low Resolution', color='orange', alpha=0.7))
         
         ax2.set_xlabel('Scene')
         ax2.set_ylabel('Average PSNR Improvement (dB)')
@@ -398,20 +695,32 @@ class BatchTileReplacementTester:
         ax2.grid(True, alpha=0.3)
         
         # 3. Number of replaced tiles comparison
-        avg_tiles_hr = df['canny_highres_tiles'].mean()
-        avg_tiles_lr = df['canny_lowres_tiles'].mean()
+        tile_methods = ['Canny High Res', 'Canny Low Res']
+        avg_tiles = [df['canny_highres_tiles'].mean(), df['canny_lowres_tiles'].mean()]
+        colors = ['blue', 'red']
         
-        ax3.bar(['Canny High Resolution', 'Canny Low Resolution'], [avg_tiles_hr, avg_tiles_lr], 
-                color=['blue', 'red'], alpha=0.7)
+        if self.mobilenet_predictor is not None and 'mobilenet_highres_tiles' in df.columns:
+            tile_methods.extend(['MobileNet High Res', 'MobileNet Low Res'])
+            avg_tiles.extend([df['mobilenet_highres_tiles'].mean(), df['mobilenet_lowres_tiles'].mean()])
+            colors.extend(['green', 'orange'])
+        
+        ax3.bar(tile_methods, avg_tiles, color=colors, alpha=0.7)
         ax3.set_ylabel('Average Number of Replaced Tiles')
         ax3.set_title('Comparison of Average Number of Replaced Tiles')
         ax3.grid(True, alpha=0.3)
+        ax3.tick_params(axis='x', rotation=45)
         
         # 4. PSNR improvement distribution
         ax4.hist(df['canny_highres_improvement'], bins=20, alpha=0.7, 
                 label='Canny High Resolution', color='blue')
         ax4.hist(df['canny_lowres_improvement'], bins=20, alpha=0.7,
                 label='Canny Low Resolution', color='red')
+        
+        if self.mobilenet_predictor is not None and 'mobilenet_highres_improvement' in df.columns:
+            ax4.hist(df['mobilenet_highres_improvement'], bins=20, alpha=0.7,
+                    label='MobileNet High Resolution', color='green')
+            ax4.hist(df['mobilenet_lowres_improvement'], bins=20, alpha=0.7,
+                    label='MobileNet Low Resolution', color='orange')
         ax4.set_xlabel('PSNR Improvement (dB)')
         ax4.set_ylabel('Frequency')
         ax4.set_title('PSNR Improvement Distribution')

@@ -1,15 +1,28 @@
 === LLFF数据集批量测试总结报告 ===
 
-测试时间: 2025-08-16 21:56:25
+测试时间: 2025-08-16 23:12:27
 测试图像总数: 20
 测试场景: fortress, horns, room
 
 平均PSNR提升结果:
-随机100tiles替换: +0.065 dB
-Canny高分辨率方法: +0.378 dB
-Canny低分辨率方法: +0.371 dB
+随机最大tiles替换: +0.064 dB
+Canny高分辨率方法: +0.282 dB
+Canny低分辨率方法: +0.255 dB
+MobileNet高分辨率方法: +0.030 dB
+MobileNet低分辨率方法: +0.040 dB
+
+替换比例统计(平均总tiles: 713):
+随机替换: 14.0%
+Canny高分辨率: 13.6%
+Canny低分辨率: 12.9%
+MobileNet高分辨率: 1.2%
+MobileNet低分辨率: 2.4%
 
 关键结论:
-Canny高分辨率 vs 随机: 5.82倍效果
-Canny低分辨率 vs 随机: 5.71倍效果
+Canny高分辨率 vs 随机: 4.38倍效果
+Canny低分辨率 vs 随机: 3.96倍效果
+MobileNet高分辨率 vs 随机: 0.46倍效果
+MobileNet低分辨率 vs 随机: 0.62倍效果
+MobileNet高分辨率 vs Canny高分辨率: 0.11倍效果
+MobileNet低分辨率 vs Canny低分辨率: 0.16倍效果
 低分辨率方法计算量减少: 75%

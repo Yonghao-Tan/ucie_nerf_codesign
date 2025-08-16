@@ -1,1 +1,0 @@
-# PSNR = 20 * np.log10(max_pixel / np.sqrt(mse))

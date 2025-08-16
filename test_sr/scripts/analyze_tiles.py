@@ -787,7 +787,7 @@ def visualize_k_test_results(results):
 
 def main():
     # 创建tile分析文件夹
-    tile_analysis_dir = "tile_analysis"
+    tile_analysis_dir = "../results/images/tile_analysis"
     # 如果文件夹已存在，则先清空
     if os.path.exists(tile_analysis_dir):
         shutil.rmtree(tile_analysis_dir)  # 删除文件夹及其内容

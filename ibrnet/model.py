@@ -114,7 +114,7 @@ class IBRNetModel(object):
             self.net_fine.train()
         if self.use_moe: self.moe.train()
 
-    def save_model(self, filename):
+    def save_model(self, filename, psnr=None):
         to_save = {'optimizer': self.optimizer.state_dict(),
                    'scheduler': self.scheduler.state_dict(),
                    'net_coarse': de_parallel(self.net_coarse).state_dict(),
@@ -123,6 +123,8 @@ class IBRNetModel(object):
 
         if self.net_fine is not None:
             to_save['net_fine'] = de_parallel(self.net_fine).state_dict()
+        if psnr is not None:
+            to_save['psnr'] = psnr
 
         torch.save(to_save, filename)
 
@@ -142,6 +144,7 @@ class IBRNetModel(object):
 
         if self.net_fine is not None and 'net_fine' in to_load.keys():
             self.net_fine.load_state_dict(to_load['net_fine'])
+        self.psnr = to_load.get('psnr', None)  # 如果 'psnr' 不存在，返回 None
 
     def load_from_ckpt(self, out_folder,
                        load_opt=True,

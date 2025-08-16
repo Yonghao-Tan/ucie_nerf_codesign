@@ -2,16 +2,17 @@
 expname = eval_llff
 rootdir = /home/ytanaz/access/IBRNet/  # REPLACE THIS with YOUR PATH.
 ckpt_path = /home/ytanaz/access/IBRNet/pretrained/model_16_32.pth   # REPLACE THIS with YOUR PATH.
+ckpt_path = /home/ytanaz/access/IBRNet/pretrained/model_16_32_sr_tuned.pth   # REPLACE THIS with YOUR PATH.
 # ckpt_path = /home/ytanaz/access/IBRNet/pretrained/pretraining/model_000200.pth   # REPLACE THIS with YOUR PATH.
 distributed = False
 
 ## dataset
 eval_dataset = llff_test
-eval_scenes = fern
+eval_scenes = fortress
 
 ### TESTING
-chunk_size = 5040
-# chunk_size = 10080
+# chunk_size = 5040
+chunk_size = 10080
 
 ### RENDERING
 N_importance = 32

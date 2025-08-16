@@ -39,6 +39,7 @@ if __name__ == '__main__':
     model = IBRNetModel(args, load_scheduler=False, load_opt=False)
     eval_dataset_name = args.eval_dataset
     extra_out_dir = '{}/{}'.format(eval_dataset_name, args.expname)
+    extra_out_dir = extra_out_dir + '_sr' if args.sr else extra_out_dir
     print("saving results to eval/{}...".format(extra_out_dir))
     os.makedirs(extra_out_dir, exist_ok=True)
 
@@ -46,7 +47,8 @@ if __name__ == '__main__':
 
     assert len(args.eval_scenes) == 1, "only accept single scene"
     scene_name = args.eval_scenes[0]
-    out_scene_dir = os.path.join(extra_out_dir, '{}_{:06d}'.format(scene_name, model.start_step))
+    # out_scene_dir = os.path.join(extra_out_dir, '{}_{:06d}'.format(scene_name, model.start_step))
+    out_scene_dir = os.path.join(extra_out_dir, f'{scene_name}')
     os.makedirs(out_scene_dir, exist_ok=True)
 
     test_dataset = dataset_dict[args.eval_dataset](args, 'test', scenes=args.eval_scenes)
@@ -79,12 +81,12 @@ if __name__ == '__main__':
 
     for i, data in enumerate(test_loader):
         rgb_path = data['rgb_path'][0]
-        file_id = os.path.basename(rgb_path).split('.')[0]
+        # file_id = os.path.basename(rgb_path).split('.')[0] # TODO
+        file_id = i
         src_rgbs = data['src_rgbs'][0].cpu().numpy()
 
         averaged_img = (np.mean(src_rgbs, axis=0) * 255.).astype(np.uint8)
-        imageio.imwrite(os.path.join(out_scene_dir, '{}_average.png'.format(file_id)),
-                        averaged_img)
+        # imageio.imwrite(os.path.join(out_scene_dir, '{}_average.png'.format(file_id)), averaged_img)
 
         model.switch_to_eval()
         with torch.no_grad():
@@ -94,7 +96,6 @@ if __name__ == '__main__':
             H, W = ray_sampler.H, ray_sampler.W
             ray_batch['H'] = H
             ray_batch['W'] = W
-
             ret = render_single_image(ray_sampler=ray_sampler,
                                       ray_batch=ray_batch,
                                       model=model,
@@ -113,8 +114,7 @@ if __name__ == '__main__':
             coarse_pred_rgb = ret['outputs_coarse']['rgb'].detach().cpu()
             coarse_err_map = torch.sum((coarse_pred_rgb - gt_rgb) ** 2, dim=-1).numpy()
             coarse_err_map_colored = (colorize_np(coarse_err_map, range=(0., 1.)) * 255).astype(np.uint8)
-            imageio.imwrite(os.path.join(out_scene_dir, '{}_err_map_coarse.png'.format(file_id)),
-                            coarse_err_map_colored)
+            # imageio.imwrite(os.path.join(out_scene_dir, '{}_err_map_coarse.png'.format(file_id)), coarse_err_map_colored)
             coarse_pred_rgb_np = np.clip(coarse_pred_rgb.numpy()[None, ...], a_min=0., a_max=1.)
             gt_rgb_np = gt_rgb.numpy()[None, ...]
 
@@ -133,16 +133,13 @@ if __name__ == '__main__':
             imageio.imwrite(os.path.join(out_scene_dir, '{}_gt_rgb.png'.format(file_id)), gt_rgb_np_uint8)
 
             coarse_pred_depth = ret['outputs_coarse']['depth'].detach().cpu()
-            imageio.imwrite(os.path.join(out_scene_dir, '{}_depth_coarse.png'.format(file_id)),
-                            (coarse_pred_depth.numpy().squeeze() * 1000.).astype(np.uint16))
+            # imageio.imwrite(os.path.join(out_scene_dir, '{}_depth_coarse.png'.format(file_id)), (coarse_pred_depth.numpy().squeeze() * 1000.).astype(np.uint16))
             coarse_pred_depth_colored = colorize_np(coarse_pred_depth,
                                                     range=tuple(data['depth_range'].squeeze().cpu().numpy()))
-            imageio.imwrite(os.path.join(out_scene_dir, '{}_depth_vis_coarse.png'.format(file_id)),
-                            (255 * coarse_pred_depth_colored).astype(np.uint8))
+            # imageio.imwrite(os.path.join(out_scene_dir, '{}_depth_vis_coarse.png'.format(file_id)), (255 * coarse_pred_depth_colored).astype(np.uint8))
             coarse_acc_map = torch.sum(ret['outputs_coarse']['weights'], dim=-1).detach().cpu()
             coarse_acc_map_colored = (colorize_np(coarse_acc_map, range=(0., 1.)) * 255).astype(np.uint8)
-            imageio.imwrite(os.path.join(out_scene_dir, '{}_acc_map_coarse.png'.format(file_id)),
-                            coarse_acc_map_colored)
+            # imageio.imwrite(os.path.join(out_scene_dir, '{}_acc_map_coarse.png'.format(file_id)), coarse_acc_map_colored)
 
             sum_coarse_psnr += coarse_psnr
             running_mean_coarse_psnr = sum_coarse_psnr / (i + 1)
@@ -162,22 +159,18 @@ if __name__ == '__main__':
 
                 fine_err_map = torch.sum((fine_pred_rgb - gt_rgb) ** 2, dim=-1).numpy()
                 fine_err_map_colored = (colorize_np(fine_err_map, range=(0., 1.)) * 255).astype(np.uint8)
-                imageio.imwrite(os.path.join(out_scene_dir, '{}_err_map_fine.png'.format(file_id)),
-                                fine_err_map_colored)
+                # imageio.imwrite(os.path.join(out_scene_dir, '{}_err_map_fine.png'.format(file_id)), fine_err_map_colored)
 
                 fine_pred_rgb = (255 * np.clip(fine_pred_rgb.numpy(), a_min=0, a_max=1.)).astype(np.uint8)
                 imageio.imwrite(os.path.join(out_scene_dir, '{}_pred_fine.png'.format(file_id)), fine_pred_rgb)
                 fine_pred_depth = ret['outputs_fine']['depth'].detach().cpu()
-                imageio.imwrite(os.path.join(out_scene_dir, '{}_depth_fine.png'.format(file_id)),
-                                (fine_pred_depth.numpy().squeeze() * 1000.).astype(np.uint16))
+                # imageio.imwrite(os.path.join(out_scene_dir, '{}_depth_fine.png'.format(file_id)), (fine_pred_depth.numpy().squeeze() * 1000.).astype(np.uint16))
                 fine_pred_depth_colored = colorize_np(fine_pred_depth,
                                                       range=tuple(data['depth_range'].squeeze().cpu().numpy()))
-                imageio.imwrite(os.path.join(out_scene_dir, '{}_depth_vis_fine.png'.format(file_id)),
-                                (255 * fine_pred_depth_colored).astype(np.uint8))
+                # imageio.imwrite(os.path.join(out_scene_dir, '{}_depth_vis_fine.png'.format(file_id)), (255 * fine_pred_depth_colored).astype(np.uint8))
                 fine_acc_map = torch.sum(ret['outputs_fine']['weights'], dim=-1).detach().cpu()
                 fine_acc_map_colored = (colorize_np(fine_acc_map, range=(0., 1.)) * 255).astype(np.uint8)
-                imageio.imwrite(os.path.join(out_scene_dir, '{}_acc_map_fine.png'.format(file_id)),
-                                fine_acc_map_colored)
+                # imageio.imwrite(os.path.join(out_scene_dir, '{}_acc_map_fine.png'.format(file_id)), fine_acc_map_colored)
             else:
                 fine_ssim = fine_lpips = fine_psnr = 0.
 
@@ -187,7 +180,7 @@ if __name__ == '__main__':
                 interpo_output = torch.nn.functional.interpolate(sr_input, scale_factor=2, mode='bicubic', align_corners=False).squeeze(0).permute(1, 2, 0)
                 # sr_output = model.sr_net(sr_input)
                 
-                tile = 16
+                tile = 12
                 tile_overlap = 0
                 scale = 2
                 b, c, h, w = sr_input.size()

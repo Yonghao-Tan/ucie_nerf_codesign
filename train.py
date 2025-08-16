@@ -68,6 +68,11 @@ def train(args):
 
     device = "cuda:{}".format(args.local_rank)
     out_folder = os.path.join(args.rootdir, 'pretrained', args.expname)
+    # 在程序初始化阶段清空 eval.log 文件
+    log_file_path = os.path.join(out_folder, 'eval.log')
+    if args.local_rank == 0:  # 只在 Rank 0 上操作
+        with open(log_file_path, 'w') as log_file:
+            log_file.write("")  # 清空文件内容
     print('outputs will be saved to {}'.format(out_folder))
     os.makedirs(out_folder, exist_ok=True)
 
@@ -102,7 +107,7 @@ def train(args):
     val_loader_iterator = iter(cycle(val_loader))
 
     # Create IBRNet model
-    model = IBRNetModel(args, load_opt=not args.no_load_opt, load_scheduler=not args.no_load_scheduler)
+    model = IBRNetModel(args, load_opt=not args.no_load_opt, load_scheduler=not args.no_load_scheduler, load_psnr=not args.no_load_psnr)
     # create projector
     projector = Projector(device=device)
 
@@ -116,6 +121,9 @@ def train(args):
 
     global_step = model.start_step + 1
     epoch = 0
+    
+    print("loaded psnr:", model.psnr)
+    best_psnr = 0.0 if model.psnr is None else model.psnr
     while global_step < model.start_step + args.n_iters + 1:
         np.random.seed()
         for train_data in train_loader:
@@ -173,6 +181,31 @@ def train(args):
             # end of core optimization loop
             dt = time.time() - time0
 
+            
+            if global_step % args.i_test == 0:
+                print('Evaluating...')
+                fine_psnr = eval(args, model, device)
+                if args.local_rank == 0:  # 主进程执行评估
+
+                    print('PSNR at {} with psnr {}, while best is {}'.format(global_step, fine_psnr, best_psnr))
+
+                    # 记录日志
+                    log_file_path = os.path.join(out_folder, 'eval.log')
+                    with open(log_file_path, 'a') as log_file:
+                        log_file.write(f"Step: {global_step}, PSNR: {fine_psnr}, Best PSNR: {best_psnr}\n")
+
+                    if fine_psnr > best_psnr:
+                        best_psnr = fine_psnr
+                        print('Saving best model at {} to {} with psnr {}'.format(global_step, out_folder, best_psnr))
+
+                        # 更新日志
+                        with open(log_file_path, 'a') as log_file:
+                            log_file.write(f"New Best PSNR: {best_psnr} at Step: {global_step}\n")
+
+                        # 保存模型
+                        fpath = os.path.join(out_folder, 'model_best.pth')
+                        model.save_model(fpath)
+                        
             # Rest is logging
             if args.local_rank == 0:
                 if global_step % args.i_print == 0 or global_step < 10:
@@ -302,6 +335,95 @@ def log_view_to_tb(writer, global_step, args, model, ray_sampler, projector, gt_
 
     model.switch_to_train()
 
+def eval(args, model, device):
+    model.switch_to_eval()
+    projector = Projector(device=device)
+    scene_name = 'fern'
+    test_dataset = dataset_dict['llff_test'](args, 'test', scenes=scene_name)
+    test_loader = DataLoader(test_dataset, batch_size=1)
+
+    total_fine_psnr = 0.
+    cnt = 0
+    for i, data in enumerate(test_loader):
+        rgb_path = data['rgb_path'][0]
+        file_id = os.path.basename(rgb_path).split('.')[0]
+        # if file_id != 'image000': continue
+        
+        with torch.no_grad():
+            ray_sampler = RaySamplerSingleImage(data, device, resize_factor=args.resize_factor, sr=args.sr)
+            ray_batch = ray_sampler.get_all()
+            featmaps = model.feature_net(ray_batch['src_rgbs'].squeeze(0).permute(0, 3, 1, 2))
+            
+            H, W = ray_sampler.H, ray_sampler.W
+            ray_batch['H'] = H
+            ray_batch['W'] = W
+
+            ret = render_single_image(ray_sampler=ray_sampler,
+                                      ray_batch=ray_batch,
+                                      model=model,
+                                      projector=projector,
+                                      chunk_size=args.chunk_size,
+                                      det=True,
+                                      N_samples=args.N_samples,
+                                      inv_uniform=args.inv_uniform,
+                                      N_importance=args.N_importance,
+                                      white_bkgd=args.white_bkgd,
+                                      featmaps=featmaps)
+            gt_rgb = data['rgb'][0]
+            gt_rgb_np = gt_rgb.numpy()[None, ...]
+            gt_rgb_hr = data['rgb'][0]
+            gt_rgb_hr_np = gt_rgb_hr.numpy()[None, ...]
+
+            if not args.sr:
+                fine_pred_rgb = ret['outputs_fine']['rgb'].detach().cpu()
+                fine_pred_rgb_np = np.clip(fine_pred_rgb.numpy()[None, ...], a_min=0., a_max=1.)
+                mse = np.mean((gt_rgb_np - fine_pred_rgb_np) ** 2)
+            else:
+                sr_input = ret['outputs_fine']['rgb'].to(device) # H, W, C
+                sr_input = sr_input.unsqueeze(0).permute(0, 3, 1, 2) # 1, C, H, W
+                interpo_output = torch.nn.functional.interpolate(sr_input, scale_factor=2, mode='bicubic', align_corners=False).squeeze(0).permute(1, 2, 0)
+                # sr_output = model.sr_net(sr_input)
+                
+                tile = 16
+                tile_overlap = 0
+                scale = 2
+                b, c, h, w = sr_input.size()
+                tile = min(tile, h, w)
+                stride = tile - tile_overlap
+                h_idx_list = list(range(0, h-tile, stride)) + [h-tile]
+                w_idx_list = list(range(0, w-tile, stride)) + [w-tile]
+                E = torch.zeros(b, c, h*scale, w*scale).type_as(sr_input)
+                W = torch.zeros_like(E)
+
+                for h_idx in h_idx_list:
+                    for w_idx in w_idx_list:
+                        in_patch = sr_input[..., h_idx:h_idx+tile, w_idx:w_idx+tile]
+                        out_patch = model.sr_net(in_patch)
+                        if isinstance(out_patch, list):
+                            out_patch = out_patch[-1]
+                        out_patch_mask = torch.ones_like(out_patch)
+
+                        E[..., h_idx*scale:(h_idx+tile)*scale, w_idx*scale:(w_idx+tile)*scale].add_(out_patch)
+                        W[..., h_idx*scale:(h_idx+tile)*scale, w_idx*scale:(w_idx+tile)*scale].add_(out_patch_mask)
+                sr_output = E.div_(W)
+                
+                sr_output = sr_output.squeeze(0).permute(1, 2, 0)
+                fine_pred_rgb = sr_output.detach().cpu()
+                fine_pred_rgb_np = np.clip(fine_pred_rgb.numpy()[None, ...], a_min=0., a_max=1.)
+                fine_interpo_rgb = interpo_output.detach().cpu()
+                fine_interpo_rgb_np = np.clip(fine_interpo_rgb.numpy()[None, ...], a_min=0., a_max=1.)
+                fine_pred_rgb = (255 * np.clip(fine_pred_rgb.numpy(), a_min=0, a_max=1.)).astype(np.uint8)
+                mse = np.mean((gt_rgb_hr_np - fine_pred_rgb_np) ** 2)
+                
+            if mse == 0:
+                return float('inf')  # 如果两张图像完全一样，则 PSNR 是无限大
+            max_pixel = 1.0
+            fine_psnr = 20 * np.log10(max_pixel / np.sqrt(mse))
+            # print(fine_psnr)
+            total_fine_psnr += fine_psnr
+            cnt += 1
+    model.switch_to_train()
+    return total_fine_psnr / cnt
 
 if __name__ == '__main__':
     parser = config.config_parser()

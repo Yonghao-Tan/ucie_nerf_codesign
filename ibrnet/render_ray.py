@@ -191,11 +191,12 @@ def share_center_to_block(tensor, window_size=5):
 
     # 创建一个空的输出张量
     output = torch.zeros_like(tensor)
+    center_offset = window_size // 2
     # 遍历每个5x5的block
     for i in range(0, h, window_size):  # 按高度方向步进5
         for j in range(0, w, window_size):  # 按宽度方向步进5
             # 提取当前block的中心位置 [2, 2]
-            center_value = tensor[i + 2, j + 2, :]  # 形状为 [n_samples]
+            center_value = tensor[i + center_offset, j + center_offset, :]  # 形状为 [n_samples]
             # 将中心值广播给当前block的所有位置
             output[i:i+window_size, j:j+window_size, :] = center_value.unsqueeze(0).unsqueeze(0)  # 广播到 [5, 5, n_samples]
     return output
@@ -235,9 +236,11 @@ def render_rays(ray_batch,
                                                  ray_batch['src_cameras'],
                                                  featmaps=featmaps[0])  # [N_rays, N_samples, N_views, x]
     pixel_mask = mask[..., 0].sum(dim=2) > 1   # [N_rays, N_samples], should at least have 2 observations
-    if mask.shape[2] != 8:
+    if model.sv_prune and mask.shape[2] != 8 and not model.net_coarse.training:
         print('Skip sv pruning!')
         model.sv_prune = False
+    elif model.net_coarse.training:
+        model.sv_top_k = int(0.625 * mask.shape[2])
     if model.sv_prune:
         blending_weights_valid, raw_coarse, mask = model.net_coarse(rgb_feat, ray_diff, mask, return_sv_prune=True)   # [N_rays, N_samples, 4]
         mask_coarse = mask.clone()
@@ -351,7 +354,7 @@ def render_rays(ray_batch,
                             sample_point_group_size=sample_point_group_size
                         )
                         mask_2d[:-H_exclude, :-W_exclude, :, :, :] = mask_pruned.reshape(effective_H, effective_W, N_total_samples, N_views3, 1)
-                        print(f"Applied sparse pruning (case a): {effective_H}x{effective_W}, group_size={sample_point_group_size}")
+                        # print(f"Applied sparse pruning (case a): {effective_H}x{effective_W}, group_size={sample_point_group_size}")
                         
                     elif H_exclude > 0:
                         # Case b: Only H has remainder
@@ -368,7 +371,7 @@ def render_rays(ray_batch,
                             sample_point_group_size=sample_point_group_size
                         )
                         mask_2d[:-H_exclude, :, :, :, :] = mask_pruned.reshape(effective_H, W, N_total_samples, N_views3, 1)
-                        print(f"Applied sparse pruning (case b): {effective_H}x{W}, group_size={sample_point_group_size}")
+                        # print(f"Applied sparse pruning (case b): {effective_H}x{W}, group_size={sample_point_group_size}")
                         
                     elif W_exclude > 0:
                         # Case c: Only W has remainder
@@ -394,7 +397,7 @@ def render_rays(ray_batch,
                             H, W, window_size=window_size, top_k=model.sv_top_k,
                             sample_point_group_size=sample_point_group_size
                         )
-                        print(f"Applied sparse pruning (case d): {H}x{W}, group_size={sample_point_group_size}")
+                        # print(f"Applied sparse pruning (case d): {H}x{W}, group_size={sample_point_group_size}")
                         
                     # Reshape back to 1D if needed
                     if H_exclude > 0 or W_exclude > 0:

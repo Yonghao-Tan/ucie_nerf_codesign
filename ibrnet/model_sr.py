@@ -29,7 +29,7 @@ def de_parallel(model):
 
 
 class IBRNetModel(object):
-    def __init__(self, args, load_opt=True, load_scheduler=True):
+    def __init__(self, args, load_opt=True, load_scheduler=True, load_psnr=True):
         self.args = args
         self.sr = args.sr
         device = torch.device('cuda:{}'.format(args.local_rank))
@@ -111,7 +111,8 @@ class IBRNetModel(object):
         out_folder = os.path.join(args.rootdir, 'out', args.expname)
         self.start_step = self.load_from_ckpt(out_folder,
                                               load_opt=load_opt,
-                                              load_scheduler=load_scheduler)
+                                              load_scheduler=load_scheduler,
+                                              load_psnr=load_psnr)
 
         if args.distributed:
             self.net_coarse = torch.nn.parallel.DistributedDataParallel(
@@ -158,7 +159,7 @@ class IBRNetModel(object):
             self.sr_net.train()
         if self.use_moe: self.moe.train()
 
-    def save_model(self, filename):
+    def save_model(self, filename, psnr=None):
         to_save = {'optimizer': self.optimizer.state_dict(),
                    'scheduler': self.scheduler.state_dict(),
                    'net_coarse': de_parallel(self.net_coarse).state_dict(),
@@ -170,10 +171,12 @@ class IBRNetModel(object):
         
         if self.sr:
             to_save['sr_net'] = de_parallel(self.sr_net).state_dict()
+        if psnr is not None:
+            to_save['psnr'] = psnr
 
         torch.save(to_save, filename)
 
-    def load_model(self, filename, load_opt=True, load_scheduler=True):
+    def load_model(self, filename, load_opt=True, load_scheduler=True, load_psnr=True):
         if self.args.distributed:
             to_load = torch.load(filename, map_location='cuda:{}'.format(self.args.local_rank))
         else:
@@ -192,11 +195,16 @@ class IBRNetModel(object):
 
         if self.sr:
             self.sr_net.load_state_dict(to_load['sr_net'], strict=False)
+        if load_psnr:
+            self.psnr = to_load.get('psnr', None)  # 如果 'psnr' 不存在，返回 None
+        else:
+            self.psnr = None
 
     def load_from_ckpt(self, out_folder,
                        load_opt=True,
                        load_scheduler=True,
-                       force_latest_ckpt=False):
+                       force_latest_ckpt=False,
+                       load_psnr=True):
         '''
         load model from existing checkpoints and return the current step
         :param out_folder: the directory that stores ckpts
@@ -215,7 +223,7 @@ class IBRNetModel(object):
 
         if len(ckpts) > 0 and not self.args.no_reload:
             fpath = ckpts[-1]
-            self.load_model(fpath, load_opt, load_scheduler)
+            self.load_model(fpath, load_opt, load_scheduler, load_psnr)
             # step = int(fpath[-10:-4])
             # print('Reloading from {}, starting at step={}'.format(fpath, step)) # TODO
             print('Reloading from {}'.format(fpath))

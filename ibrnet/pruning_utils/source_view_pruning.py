@@ -217,7 +217,7 @@ def apply_source_view_pruning_optimized(z_vals_coarse, z_samples, blending_weigh
                 # 将第一个sample的mask应用到组内所有samples
                 extended_pruned_mask[ray_idx, start_idx:end_idx, :, :] = first_sample_mask.unsqueeze(0)
         
-        print(f"Applied sample point grouping: group_size={sample_point_group_size}, {num_complete_groups} complete groups per ray")
+        # print(f"Applied sample point grouping: group_size={sample_point_group_size}, {num_complete_groups} complete groups per ray")
     
     # Step 5: 最终与fine_mask进行AND操作 (fine_mask是雷打不动的)
     final_fine_mask = extended_pruned_mask * fine_mask
@@ -441,7 +441,7 @@ def apply_source_view_pruning_sparse_vectorized(z_vals_coarse, z_samples, blendi
                 # 将第一个sample的mask应用到组内所有samples
                 pruned_mask[ray_idx, start_idx:end_idx, :, :] = first_sample_mask.unsqueeze(0)
         
-        print(f"Applied sparse sample point grouping: group_size={sample_point_group_size}, {num_complete_groups} complete groups per ray")
+        # print(f"Applied sparse sample point grouping: group_size={sample_point_group_size}, {num_complete_groups} complete groups per ray")
     
     # Step 5: 最终与fine_mask进行AND操作 (fine_mask是雷打不动的)
     final_fine_mask = pruned_mask * fine_mask

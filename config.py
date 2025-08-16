@@ -82,6 +82,8 @@ def config_parser():
                         help='do not load optimizer when reloading')
     parser.add_argument("--no_load_scheduler", action='store_true',
                         help='do not load scheduler when reloading')
+    parser.add_argument("--no_load_psnr", action='store_true',
+                        help='do not load psnr when reloading')
 
     ########### iterations & learning rate options ##########
     parser.add_argument("--n_iters", type=int, default=250000, help='num of iterations')
@@ -105,6 +107,7 @@ def config_parser():
                         help='render with large stride for validation to save time')
 
     ########## logging/saving options ##########
+    parser.add_argument("--i_test", type=int, default=2000, help='frequency of eval')
     parser.add_argument("--i_print", type=int, default=100, help='frequency of terminal printout')
     parser.add_argument("--i_img", type=int, default=500, help='frequency of tensorboard image logging')
     parser.add_argument("--i_weights", type=int, default=10000, help='frequency of weight ckpt saving')

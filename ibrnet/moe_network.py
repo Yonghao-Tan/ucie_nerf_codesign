@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-def reshape(x_in, H, W, block_length=5, out=False):  # block_size*cols, n_samples, n_views, n_feat
-    H_exclude, W_exclude = H % 5, W % 5
+def reshape(x_in, H, W, block_length, out=False):  # block_size*cols, n_samples, n_views, n_feat
+    H_exclude, W_exclude = H % block_length, W % block_length
     x_in_2d = x_in.reshape(H, W, *x_in.shape[1:])
     if H_exclude > 0 and W_exclude > 0:
         x_slice = x_in_2d[:-H_exclude, :-W_exclude]
@@ -14,7 +14,7 @@ def reshape(x_in, H, W, block_length=5, out=False):  # block_size*cols, n_sample
     else:
         x_slice = x_in_2d
     h, w, *xxx = x_slice.shape
-    assert h % block_length == 0 and w % block_length == 0, "h 和 w 必须能被 block_size 整除"
+    assert h % block_length == 0 and w % block_length == 0, f"{h} 和 {w} 必须能被 {block_length} 整除"
     # 重塑张量为 [h // block_size, block_size, w // block_size, block_size, xxx]
     x_slice = x_slice.view(h // block_length, block_length, w // block_length, block_length, *xxx)
     # 调整维度顺序为 [block_groups, block_size, block_size, xxx]
@@ -27,7 +27,7 @@ def reshape(x_in, H, W, block_length=5, out=False):  # block_size*cols, n_sample
     split_feats = [x[i] for i in range(block_groups)]
     return split_feats, h, w
 
-def inverse_reshape(tensor, h, w, block_length=5):
+def inverse_reshape(tensor, h, w, block_length):
     # 获取输入张量的形状
     block_groups, _, *xxx = tensor.shape
     # 恢复 block_size 的二维形状
@@ -45,24 +45,26 @@ class MOE(nn.Module):
         super(MOE, self).__init__()
         self.mof_l2_loss = nn.MSELoss()
 
-    def forward(self, H, W, rgb_feat, rgb_in, weights, out_org, mask_all, use_moe_block=False):
+    def forward(self, H, W, rgb_feat, rgb_in, weights, out_org, mask_all, window_size=5, use_moe_block=False):
         if not self.training and not use_moe_block:
             return out_org, torch.tensor(0.0).to(out_org.device)
-        block_size = 25
-        split_rgb_feats, h, w = reshape(rgb_feat, H, W)
-        split_weights, _, _ = reshape(weights, H, W)
-        split_mask_all, _, _ = reshape(mask_all, H, W)
-        split_rgb_ins, _, _ = reshape(rgb_in, H, W)
-        split_outs, _, _ = reshape(out_org.clone().unsqueeze(2), H, W, out=True) # n_col_blocks, block_size*block_size, n_feat
-        positions = [0, 2, 4, 10, 12, 14, 20, 22, 24]
-        # positions = [1,3,5,6,7,8,9,11,13,15,16,17,18,19,21,23]
-        # positions = [0,1,2,3,4,5,6,7,8,9,10,11,   13,14,15,16,17,18,19,20,21,22,23,24]
+        block_size = window_size * window_size
+        split_rgb_feats, h, w = reshape(rgb_feat, H, W, block_length=window_size)
+        split_weights, _, _ = reshape(weights, H, W, block_length=window_size)
+        split_mask_all, _, _ = reshape(mask_all, H, W, block_length=window_size)
+        split_rgb_ins, _, _ = reshape(rgb_in, H, W, block_length=window_size)
+        split_outs, _, _ = reshape(out_org.clone().unsqueeze(2), H, W, block_length=window_size,out=True) # n_col_blocks, block_size*block_size, n_feat
+        if window_size == 5:
+            positions = [0, 2, 4, 10, 12, 14, 20, 22, 24]
+        elif window_size == 8:
+            positions = [0, 3, 4, 7, 9, 14, 18, 21, 24, 27, 28, 31, 32, 35, 36, 39, 42, 45, 49, 54, 56, 59, 60, 63]
+            
         for i in range(len(split_outs)):
-            split_outs[i] = self.mof_func_distance(positions, split_rgb_feats[i], split_rgb_ins[i], split_weights[i], split_outs[i], split_mask_all[i], block_size)
+            split_outs[i] = self.mof_func_distance(positions, split_rgb_feats[i], split_rgb_ins[i], split_weights[i], split_outs[i], split_mask_all[i], window_size, block_size)
         out_slice = torch.stack(split_outs, dim=0) # block_groups, block_size, n_samples, n_feat
-        out_slice = inverse_reshape(out_slice, h, w)
+        out_slice = inverse_reshape(out_slice, h, w, block_length=window_size)
         out_org_2d = out_org.reshape(H, W, *out_org.shape[1:])
-        H_exclude, W_exclude = H % 5, W % 5
+        H_exclude, W_exclude = H % window_size, W % window_size
         if H_exclude > 0 and W_exclude > 0:
             out_org_2d[:H-H_exclude, :W-W_exclude] = out_slice
         elif H_exclude > 0: 
@@ -102,7 +104,7 @@ class MOE(nn.Module):
             out[exclude_positions[i],:,3:] = avg_sigma[i]
         return out
     
-    def mof_func_distance(self, positions, rgb_feat, rgb_in, weight, out, mask, block_size):
+    def mof_func_distance(self, positions, rgb_feat, rgb_in, weight, out, mask, window_size, block_size):
         n_rays, n_samples, n_views, n_feat = rgb_feat.shape
         known_len = len(positions)
         unknown_len = block_size - known_len
@@ -116,7 +118,7 @@ class MOE(nn.Module):
         
         # 计算5x5网格中的坐标
         def get_2d_position(pos):
-            return (pos // 5, pos % 5)
+            return (pos // window_size, pos % window_size)
         
         # 计算基于距离的权重
         distance_weights = torch.zeros((unknown_len, known_len)).to(known_sigma.device)

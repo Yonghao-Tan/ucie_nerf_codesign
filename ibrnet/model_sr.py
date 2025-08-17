@@ -45,6 +45,7 @@ class IBRNetModel(object):
                                    in_feat_ch=self.args.fine_feat_dim,
                                    n_samples=self.args.N_samples+self.args.N_importance,
                                    use_moe=args.use_moe).to(device)
+        self.window_size = args.window_size
         self.sample_point_sparsity = args.sample_point_sparsity
         self.use_moe = args.use_moe
         self.sv_prune = args.sv_prune

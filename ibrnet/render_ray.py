@@ -187,18 +187,18 @@ def share_center_to_block(tensor, window_size=5):
     h, w = tensor.shape[:2]
     assert tensor.dim() == 3, "输入张量必须是三维的，形状为 [rays_h, rays_w, n_samples]"
     assert h * w == tensor.size(0) * tensor.size(1), "rays 必须等于 h * w"
-    assert h % window_size == 0 and w % window_size == 0, "h 和 w 必须能被5整除"
+    assert h % window_size == 0 and w % window_size == 0, f"{h} 和 {w} 必须能被{window_size}整除"
 
     # 创建一个空的输出张量
     output = torch.zeros_like(tensor)
     center_offset = window_size // 2
-    # 遍历每个5x5的block
+    # 遍历每个window_sizexwindow_size的block
     for i in range(0, h, window_size):  # 按高度方向步进5
         for j in range(0, w, window_size):  # 按宽度方向步进5
             # 提取当前block的中心位置 [2, 2]
             center_value = tensor[i + center_offset, j + center_offset, :]  # 形状为 [n_samples]
             # 将中心值广播给当前block的所有位置
-            output[i:i+window_size, j:j+window_size, :] = center_value.unsqueeze(0).unsqueeze(0)  # 广播到 [5, 5, n_samples]
+            output[i:i+window_size, j:j+window_size, :] = center_value.unsqueeze(0).unsqueeze(0)  # 广播到 [window_size, window_size, n_samples]
     return output
 
 def render_rays(ray_batch,
@@ -266,16 +266,15 @@ def render_rays(ray_batch,
             raise NotImplementedError("Only inverse uniform sampling is implemented for now.")
 
         z_vals_coarse = z_vals.clone()
-        # print(z_vals_coarse.shape, mask.shape)
-        # visualize_depth_samples(z_vals_coarse[0], z_samples[0], save_path='test_dist.png')
-        # exit()
         z_vals = torch.cat((z_vals, z_samples), dim=-1)  # [N_rays, N_samples + N_importance]
         z_vals, _ = torch.sort(z_vals, dim=-1)
         H, W = ray_batch['H'], ray_batch['W']
         assert z_vals.shape[0] >= W
         H = z_vals.shape[0] // W
-        window_size = 5
+        window_size = model.window_size
         if model.sample_point_sparsity: 
+            # TODO
+            # if window_size > 6: window_size = window_size // 2
             H_exclude, W_exclude = H % window_size, W % window_size
             z_vals_2d = z_vals.reshape(H, W, -1)
             if H_exclude > 0 and W_exclude > 0:
@@ -295,7 +294,7 @@ def render_rays(ray_batch,
                 z_vals_2d[:, :W-W_exclude, :] = z_vals_slice
             else:
                 # print('q', H, W, z_vals.shape[:1])
-                z_vals_2d = share_center_to_block(z_vals_2d)
+                z_vals_2d = share_center_to_block(z_vals_2d, window_size=window_size)
             z_vals = z_vals_2d.reshape(-1, z_vals_2d.shape[-1])  # [N_rays, N_samples + N_importance]
 
         small_variance_indices = None
@@ -314,6 +313,7 @@ def render_rays(ray_batch,
 
         pixel_mask = mask[..., 0].sum(dim=2) > 1  # [N_rays, N_samples]. should at least have 2 observations
         
+        window_size = model.window_size # TODO
         # Apply source view pruning if we have coarse stage weights and mask
         if model.sv_prune and 'blending_weights_valid' in locals() and 'mask_coarse' in locals():
             # try:
@@ -416,7 +416,7 @@ def render_rays(ray_batch,
             # except Exception as e:
             #     print(f"Source view pruning failed: {e}, using original mask")
         
-        if model.use_moe and H % 5 == 0:
+        if model.use_moe and H % window_size == 0:
             rgb_feat, rgb_in, blending_weights_valid, raw_fine_org, mask = model.net_fine(rgb_feat_sampled, ray_diff, mask, return_moe=True)
             raw_fine, mof_l2_loss = model.moe(
                 H, W,
@@ -425,6 +425,7 @@ def render_rays(ray_batch,
                 blending_weights_valid,
                 raw_fine_org,
                 mask,
+                window_size=window_size,
                 use_moe_block=True
             )
             ret['mof_l2_loss'] = mof_l2_loss

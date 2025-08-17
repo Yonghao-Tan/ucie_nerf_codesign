@@ -27,31 +27,37 @@ plt.rcParams['axes.unicode_minus'] = False
 
 class BatchTileReplacementTester:
     """批量tile替换测试器"""
-    
-    def __init__(self, llff_test_root="/home/ytanaz/access/IBRNet/eval/llff_test"):
+
+    def __init__(self, llff_test_root="/home/ytanaz/access/IBRNet/eval/llff_test", use_nn=False):
         self.llff_test_root = Path(llff_test_root)
-        self.eval_llff_path = self.llff_test_root / "eval_llff"
+        self.eval_llff_path = self.llff_test_root / "eval_llff_golden" # TODO
         self.eval_llff_sr_path = self.llff_test_root / "eval_llff_sr"
         self.tile_size = 32
-        self.fine_tile_size = 16  # 在fine分辨率上的tile大小
+        self.tile_size = 20
+        self.fine_tile_size = self.tile_size // 2  # 在fine分辨率上的tile大小
+        self.use_nn = use_nn
         
         # 预设阈值
         self.canny_threshold = 0.160  # 高分辨率方法的阈值
         self.canny_threshold_lowres = 0.250  # 低分辨率校正后的阈值
         
         # 初始化MobileNetV2预测器
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.mobilenet_predictor = self._init_mobilenet_predictor()
-        self.mobilenet_threshold = 1.80  # MobileNetV2高分辨率阈值（调整以控制替换率~100）
-        self.mobilenet_threshold_lowres = 2.20  # MobileNetV2低分辨率阈值（调整以控制替换率~100）
+        if self.use_nn:
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            self.mobilenet_predictor = self._init_mobilenet_predictor()
+            self.mobilenet_threshold = 1.80  # MobileNetV2高分辨率阈值（调整以控制替换率~100）
+            self.mobilenet_threshold_lowres = 2.20  # MobileNetV2低分辨率阈值（调整以控制替换率~100）
+        else:
+            self.mobilenet_predictor = None
         
         print(f"🔍 批量测试器初始化")
         print(f"LLFF测试根目录: {self.llff_test_root}")
         print(f"Canny高分辨率阈值: {self.canny_threshold}")
         print(f"Canny低分辨率阈值: {self.canny_threshold_lowres}")
-        print(f"MobileNet高分辨率阈值: {self.mobilenet_threshold}")
-        print(f"MobileNet低分辨率阈值: {self.mobilenet_threshold_lowres}")
-        print(f"计算设备: {self.device}")
+        if self.use_nn:
+            print(f"MobileNet高分辨率阈值: {self.mobilenet_threshold}")
+            print(f"MobileNet低分辨率阈值: {self.mobilenet_threshold_lowres}")
+            print(f"计算设备: {self.device}")
     
     def _init_mobilenet_predictor(self):
         """初始化MobileNetV2复杂度预测器"""
@@ -762,12 +768,9 @@ def main():
     # 保存结果
     tester.save_results(df, avg_results)
     
-    print("\n🎉 批量测试全部完成！")
     print("\n🏆 关键结论:")
     print(f"- Canny高分辨率方法: {avg_results['Canny高分辨率']:+.3f} dB平均提升")
     print(f"- Canny低分辨率方法: {avg_results['Canny低分辨率']:+.3f} dB平均提升")
-    print(f"- 低分辨率方法计算量仅为高分辨率方法的25%")
-    print(f"- 所有方法均显著优于随机替换基线")
 
 if __name__ == "__main__":
     main()

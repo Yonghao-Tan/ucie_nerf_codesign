@@ -43,6 +43,7 @@ class IBRNetModel(object):
                                    in_feat_ch=self.args.fine_feat_dim,
                                    n_samples=self.args.N_samples+self.args.N_importance,
                                    use_moe=args.use_moe).to(device)
+        self.window_size = args.window_size
         self.use_moe = args.use_moe
         if self.use_moe:
             self.moe = MOE().cuda()

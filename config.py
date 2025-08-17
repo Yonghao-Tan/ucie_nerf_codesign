@@ -67,6 +67,8 @@ def config_parser():
     parser.add_argument('--coarse_only', action='store_true', help='use coarse network only')
     parser.add_argument("--anti_alias_pooling", type=int, default=1, help='if use anti-alias pooling')
 
+    parser.add_argument("--chunk_height", type=int, default=5, help='number of coarse samples per ray')
+    parser.add_argument("--window_size", type=int, default=5, help='num of window size used for ideas')
     parser.add_argument('--sample_point_group_size', type=int, default=-1, help="sample_point_group_size")
     parser.add_argument('--sv_top_k', type=int, default=6, help="2D feature dimension for fine level")
     parser.add_argument('--use_moe', action='store_true', help='using fine sharing')

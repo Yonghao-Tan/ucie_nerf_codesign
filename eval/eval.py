@@ -96,6 +96,10 @@ if __name__ == '__main__':
             H, W = ray_sampler.H, ray_sampler.W
             ray_batch['H'] = H
             ray_batch['W'] = W
+            # TODO
+            args.chunk_size = args.chunk_height * W
+            assert args.chunk_height % args.window_size == 0
+            # print(args.chunk_size, args.chunk_height, W)
             ret = render_single_image(ray_sampler=ray_sampler,
                                       ray_batch=ray_batch,
                                       model=model,
@@ -180,7 +184,8 @@ if __name__ == '__main__':
                 interpo_output = torch.nn.functional.interpolate(sr_input, scale_factor=2, mode='bicubic', align_corners=False).squeeze(0).permute(1, 2, 0)
                 # sr_output = model.sr_net(sr_input)
                 
-                tile = 16
+                # tile = 10
+                tile = 2 * args.window_size # TODO important!
                 tile_overlap = 0
                 scale = 2
                 b, c, h, w = sr_input.size()
@@ -215,7 +220,6 @@ if __name__ == '__main__':
                 with tf.Session() as session:
                     sr_psnr = session.run(psnr_tf, feed_dict={pred_ph: fine_pred_rgb_np, gt_ph: gt_rgb_hr_np})[0]
                     interpo_psnr = session.run(psnr_tf, feed_dict={pred_ph: fine_interpo_rgb_np, gt_ph: gt_rgb_hr_np})[0]
-                print(sr_psnr, interpo_psnr)
                 sum_sr_psnr += sr_psnr
                 running_mean_sr_psnr = sum_sr_psnr / (i + 1)
                 sum_interpo_psnr += interpo_psnr

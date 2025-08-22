@@ -7,8 +7,8 @@ from tqdm import tqdm
 import matplotlib.patches as patches
 
 # 配置参数
-H_t = 378  # 图像高度
-W_t = 504   # 图像宽度
+H_t = 756  # 图像高度
+W_t = 1008   # 图像宽度
 H_s = 756
 W_s = 1008
 window_size = 16  # 窗口大小，可调节的变量
@@ -27,7 +27,7 @@ if GENERATE_PLOTS:
     print(f"Created output directory: {output_dir}")
 
 # 加载张量
-pixel_locations = torch.load("../eval/outputs/pixel_locations_1.pt")
+pixel_locations = torch.load("./locations/pixel_locations_0_n48.pt")
 print("Loaded tensor shape:", pixel_locations.shape)
 
 # Reshape 并提取切片

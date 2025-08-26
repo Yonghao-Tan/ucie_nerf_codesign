@@ -24,7 +24,7 @@ from .llff_data_utils import load_llff_data, batch_parse_llff_poses
 
 
 class LLFFTestDataset(Dataset):
-    def __init__(self, args, mode, scenes=(), random_crop=True, **kwargs):
+    def __init__(self, args, mode, scenes=(), random_crop=True, factor=4, **kwargs):
         self.folder_path = os.path.join(args.rootdir, 'data/nerf_llff_data/')
         self.args = args
         self.mode = mode  # train / test / validation
@@ -50,7 +50,7 @@ class LLFFTestDataset(Dataset):
         print("loading {} for {}".format(scenes, mode))
         for i, scene in enumerate(scenes):
             scene_path = os.path.join(self.folder_path, scene)
-            _, poses, bds, render_poses, i_test, rgb_files = load_llff_data(scene_path, load_imgs=False, factor=4) # TODO
+            _, poses, bds, render_poses, i_test, rgb_files = load_llff_data(scene_path, load_imgs=False, factor=factor) # TODO
             near_depth = np.min(bds)
             far_depth = np.max(bds)
             intrinsics, c2w_mats = batch_parse_llff_poses(poses)

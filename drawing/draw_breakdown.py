@@ -13,10 +13,16 @@ rcParams['font.sans-serif'] = ['DejaVu Sans']
 # 左侧饼图：计算 breakdown
 labels1 = ['EMA', 'Comp SRAM', 'Comp PE', 'Interpolation', 'Others']
 sizes1 = [5.16, 1.001, 3.648, 0.539, 0.17]
+
+DRAM_per_B = 1e12*60.4*1e-3/(1*1024**3)
+# DRAM_per_B = 11*8
+power_ema = (6027.06/1024*64/48 * 1024**3) * DRAM_per_B * 1e-12
+sizes1 = [power_ema, 0.113, 0.302, 0.055, 0.017]
 colors1 = plt.get_cmap('Set2').colors[:len(labels1)]
 
 # 右侧饼图：存储 breakdown（示例数据，可自行修改）
 labels2 = ['Off-chip', 'On-chip Comp', 'On-chip Interpolation']
+off_chip_latency = 6027.06/1024*64/48 / 25.6
 sizes2 = [3.34, 2.54, 0.46] # 插值算力0.4TFLOPS?
 colors2 = plt.get_cmap('Set3').colors[:len(labels2)]
 
@@ -50,7 +56,7 @@ axs[1].axis('equal')
 # 在图的空白处添加注释
 fig.text(
 	0.5, 0.05,
-	'Off-chip Memory: DDR3-1600, 12.8GB/s\nPE Array: 2048 MAC @ 500MHz -> 2TOPS\nInterpolation: ~0.4TFLOPS\nEMA: 112.54 pJ/B, PE: 0.718 pJ/op, SRAM: 3.153 pJ/B',
+	'Off-chip Memory: 1xLPDDR4-3200, 25.6GB/s\nPE Array: 2048 MAC @ 500MHz -> 2TOPS\nInterpolation: ~0.25TFLOPS\nEMA: 60.4 pJ/B, PE: 0.0595 pJ/op, SRAM: 0.3567 pJ/B',
 	ha='center', va='center', fontsize=13, fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='gray')
 )
 

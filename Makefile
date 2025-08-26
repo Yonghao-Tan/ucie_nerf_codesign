@@ -5,16 +5,16 @@
 
 test:
 	cd ./eval && \
-	CUDA_VISIBLE_DEVICES=0 python eval.py --config ../configs/eval_llff.txt --num_source_views 8 --chunk_height 5
+	CUDA_VISIBLE_DEVICES=0 python eval.py --config ../configs/eval_llff.txt --num_source_views 8 --chunk_height 5 --eval_scenes trex
 
 test2:
 	cd ./eval && \
-	CUDA_VISIBLE_DEVICES=5 python eval.py --config ../configs/eval_llff_sr.txt --num_source_views 8 --resize_factor 0.5 --sr --sample_point_sparsity --window_size 5 --sv_prune --sv_top_k 5 --sample_point_group_size 8 --chunk_height 15 --eval_scenes fern
+	CUDA_VISIBLE_DEVICES=3 python eval.py --config ../configs/eval_llff_sr.txt --num_source_views 8 --resize_factor 0.5 --sr --sample_point_sparsity --window_size 5 --sv_prune --sv_top_k 5 --sample_point_group_size 8 --chunk_height 5 --eval_scenes trex
 # --sample_point_sparsity --use_moe --sv_prune --sv_top_k 5 --sample_point_group_size -1 --window_size 8
 
 tests:
 	cd ./eval && \
-	CUDA_VISIBLE_DEVICES=5 python eval.py --config ../configs/eval_llff_sr.txt --ckpt_path ../pretrained/model_16_32_sr_tuned.pth --chunk_height 16 --window_size 8 --num_source_views 8 --resize_factor 0.5 --sr --eval_scenes fern
+	CUDA_VISIBLE_DEVICES=5 python eval.py --config ../configs/eval_llff_sr.txt --ckpt_path ../pretrained/model_16_32_sr_tuned.pth --chunk_height 10 --window_size 5 --num_source_views 8 --resize_factor 0.5 --sr --eval_scenes horns
 
 test_new:
 	cd ./eval && \

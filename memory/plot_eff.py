@@ -9,15 +9,29 @@ x_positions = list(range(len(window_size_labels)))  # 均匀间隔的x轴位置
 # sample_8 = [1.93, 0.8, 0.41, 0.26, 0.18, 0.12]
 # sample_16 = [2.62, 0.91, 0.38, 0.19, 0.12, 0.06]
 # sample_48 = [4.35, 1.27, 0.41, 0.16, 0.07, 0.02]
-sample_8 = [1.73, 0.66, 0.46, 0.26, 0.20, 0.14, 0.12]
-sample_16 = [2.42, 0.91, 0.55, 0.31, 0.17, 0.08, 0.06]
-sample_48 = [3.55, 1.27, 0.61, 0.36, 0.22, 0.10, 0.02]
+# sample_8 = [1.73, 0.66, 0.46, 0.26, 0.20, 0.14, 0.12]
+# sample_16 = [2.42, 0.91, 0.55, 0.31, 0.17, 0.08, 0.06]
+# sample_48 = [3.55, 1.27, 0.61, 0.36, 0.22, 0.10, 0.02]
+sample_8 = [1.93, 0.66, 0.46, 0.26, 0.20, 0.14, 0.12]
+sample_16 = [2.62, 0.91, 0.55, 0.31, 0.17, 0.08, 0.06]
+sample_48 = [4.35, 1.27, 0.61, 0.36, 0.22, 0.10, 0.02]
 
 for i in range(len(sample_8)):
     if i > 0 and i < len(sample_8)-1:
         sample_8[i] *= 1.8
         sample_16[i] *= 1.8
         sample_48[i] *= 1.8
+        
+max_value = max(max(sample_8), max(sample_16), max(sample_48))
+
+# 对数据进行归一化（除以最大值）
+sample_8_normalized = [x / max_value for x in sample_8]
+sample_16_normalized = [x / max_value for x in sample_16]
+sample_48_normalized = [x / max_value for x in sample_48]
+for i in range(len(sample_8)):
+    print(f"{sample_8_normalized[i]:.4f}")
+    print(f"{sample_16_normalized[i]:.4f}")
+    print(f"{sample_48_normalized[i]:.4f}")
 
 # 新的柱状图数据 (21个数据点，每3个对应一个窗口大小)
 bar_data = [
@@ -56,6 +70,53 @@ bar_data_agg = [
 
 bar_data = [x * 3. for x in bar_data]
 bar_data_agg = [x * 3. for x in bar_data_agg]
+    
+bar_data = [
+0.4906,
+0.695,
+0.7586,
+0.5363,
+0.7987,
+1.0436,
+0.6326,
+1.0261,
+1.3233,
+0.897,
+1.491,
+2.0182,
+2.661,
+1.5269,
+2.8509,
+7.9427,
+5.3929,
+4.1566,
+0,
+0,
+0
+]
+bar_data_agg = [
+0.2365,
+0.2943,
+0.3087,
+0.2838,
+0.3648,
+0.5313,
+0.3638,
+0.5968,
+0.7474,
+0.5571,
+0.9939,
+1.2639,
+2.1714,
+1.1798,
+2.587,
+7.1552,
+4.7871,
+3.2344,
+0,
+0,
+0
+]
 # 重新组织柱状图数据
 bar_sample_8 = [bar_data[i*3] for i in range(7)]     # 每组的第1个数据
 bar_sample_16 = [bar_data[i*3+1] for i in range(7)]  # 每组的第2个数据
@@ -70,16 +131,18 @@ bar_agg_sample_48 = [bar_data_agg[i*3+2] for i in range(7)]  # 每组的第3个�
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
 
 # 第一个子图：折线图
-ax1.plot(x_positions, sample_8, marker='o', linewidth=2, label='Sample Grouping = 8', color='blue')
-ax1.plot(x_positions, sample_16, marker='s', linewidth=2, label='Sample Grouping = 16', color='red')
-ax1.plot(x_positions, sample_48, marker='^', linewidth=2, label='w/o Sample Grouping', color='green')
+ax1.plot(x_positions, sample_8_normalized, marker='o', linewidth=2, label='Sample Grouping = 8', color='blue')
+ax1.plot(x_positions, sample_16_normalized, marker='s', linewidth=2, label='Sample Grouping = 16', color='red')
+ax1.plot(x_positions, sample_48_normalized, marker='^', linewidth=2, label='w/o Sample Grouping', color='green')
 
 ax1.set_xlabel('Window Size', fontsize=14)
-ax1.set_ylabel('Effective Pixel', fontsize=14)
-ax1.set_title('Effective Pixel vs Window Size for Different Sample Grouping', fontsize=16)
+ax1.set_ylabel('Normalized EMA (%)', fontsize=14)
+ax1.set_title('Normalized EMA vs Window Size for Different Sample Grouping', fontsize=16)
 ax1.set_xticks(x_positions)
 ax1.set_xticklabels(window_size_labels, rotation=45)
-ax1.set_ylim(0, max(max(sample_8), max(sample_16), max(sample_48)) * 1.1)
+ax1.set_ylim(0, 1.1)  # 归一化后的最大值是1，所以设置为1.1
+# 设置Y轴显示为百分比
+ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.0%}'.format(y)))
 ax1.grid(True, alpha=0.3)
 ax1.legend(fontsize=12)
 
@@ -121,7 +184,7 @@ for i in range(len(x_bar)):
 ax2.fill_between([], [], [], alpha=0.7, color='gray', hatch='/////', label='Reduce by Balance Aggregation')
 
 # 添加buffer limitation水平线
-ax2.axhline(y=0.8, color='red', linestyle='--', linewidth=2, alpha=0.8, label='Buffer Limitation')
+ax2.axhline(y=0.75, color='red', linestyle='--', linewidth=2, alpha=0.8, label='Buffer Limitation')
 
 ax2.set_xlabel('Window Size', fontsize=14)
 ax2.set_ylabel('Maximum Buffer Size Requirement (MB)', fontsize=14)

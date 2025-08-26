@@ -51,7 +51,12 @@ if __name__ == '__main__':
     out_scene_dir = os.path.join(extra_out_dir, f'{scene_name}')
     os.makedirs(out_scene_dir, exist_ok=True)
 
-    test_dataset = dataset_dict[args.eval_dataset](args, 'test', scenes=args.eval_scenes)
+    test_dataset = dataset_dict[args.eval_dataset](args, 'test', scenes=args.eval_scenes, factor=4)
+    # fern, f=1: 21.62, 21.68, 21.47
+    # fern, f=4: 23.35, 23.25
+    # fern, f=8: 24.40, 23.89
+    
+    # trex, f=1: 23.42, 23.47, 23.04
     save_prefix = scene_name
     test_loader = DataLoader(test_dataset, batch_size=1)
     total_num = len(test_loader)

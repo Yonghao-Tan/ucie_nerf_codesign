@@ -103,7 +103,7 @@ def train():
     H, W = 800, 800
     energy_flops, energy_sram = 0.718, 3.153
     # H, W = 800, 800*0.76/6.75
-    # energy_flops, energy_sram = 0.1, 0.5
+    energy_flops, energy_sram = 0.0595, 0.3567
     # 输出总结果：GFLOPs 和延时 (ms)
     if G:
         print(f"Ray FLOPs: {total_flops / 1e6:.3f} MFLOPs")

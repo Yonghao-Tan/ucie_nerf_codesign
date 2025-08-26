@@ -125,7 +125,14 @@ def sample_along_camera_ray(ray_o, ray_d, depth_range,
 # ray rendering of nerf
 ########################################################################################################################
 
+infos_sigma = None
+infos_depth_map = None
+infos_weights = None
+save_idx = 0
+
 def raw2outputs(raw, z_vals, mask, white_bkgd=False):
+    global infos_sigma, infos_depth_map, infos_weights, save_idx
+    
     '''
     :param raw: raw network output; tensor of shape [N_rays, N_samples, 4]
     :param z_vals: depth of point samples along rays; tensor of shape [N_rays, N_samples]
@@ -160,7 +167,32 @@ def raw2outputs(raw, z_vals, mask, white_bkgd=False):
 
     mask = mask.float().sum(dim=1) > 8  # should at least have 8 valid observation on the ray, otherwise don't consider its loss
     depth_map = torch.sum(weights * z_vals, dim=-1)     # [N_rays,]
-
+    # print(depth_map.shape, weights.shape, z_vals.shape)
+    if z_vals.shape[1] == 48:
+        # 累积保存逻辑
+        with torch.no_grad():
+            cur_sigma = sigma.detach().cpu()
+            cur_depth_map = depth_map.detach().cpu()
+            cur_weights = weights.detach().cpu()
+            if infos_sigma is None:
+                infos_sigma = cur_sigma
+                infos_depth_map = cur_depth_map
+                infos_weights = cur_weights
+            else:
+                infos_sigma = torch.cat([infos_sigma, cur_sigma], dim=0)
+                infos_depth_map = torch.cat([infos_depth_map, cur_depth_map], dim=0)
+                infos_weights = torch.cat([infos_weights, cur_weights], dim=0)
+            if cur_sigma.shape[0] != 5040: # TODO
+                print('save', cur_sigma.shape, infos_sigma.shape)
+                infos_sigma = infos_sigma.reshape(378, 504, -1)
+                infos_depth_map = infos_depth_map.reshape(378, 504)
+                infos_weights = infos_weights.reshape(378, 504, -1)
+                scene = 'horns'
+                torch.save(infos_sigma, f"../test_sr/data/datasets/{scene}/render_sigmas_{save_idx}_n{z_vals.shape[1]}.pt")
+                torch.save(infos_depth_map, f"../test_sr/data/datasets/{scene}/render_depths_{save_idx}_n{z_vals.shape[1]}.pt")
+                torch.save(infos_weights, f"../test_sr/data/datasets/{scene}/render_weights_{save_idx}_n{z_vals.shape[1]}.pt")
+                infos_sigma = None
+                save_idx += 1
     ret = OrderedDict([('rgb', rgb_map),
                        ('depth', depth_map),
                        ('weights', weights),                # used for importance sampling of fine samples

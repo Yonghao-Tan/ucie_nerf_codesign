@@ -18,7 +18,9 @@ from collections import OrderedDict
 import numpy as np
 from .pruning_utils import (
     apply_source_view_pruning, 
-    apply_source_view_pruning_sparse_vectorized
+    # apply_source_view_pruning_sparse_vectorized as source_view_pruning_share,
+    # apply_source_view_pruning_sparse_vectorized_aggregated as source_view_pruning_share，
+    apply_source_view_pruning_2x2_windows_threshold_based as source_view_pruning_share,
 )
 
 ########################################################################################################################
@@ -168,7 +170,7 @@ def raw2outputs(raw, z_vals, mask, white_bkgd=False):
     mask = mask.float().sum(dim=1) > 8  # should at least have 8 valid observation on the ray, otherwise don't consider its loss
     depth_map = torch.sum(weights * z_vals, dim=-1)     # [N_rays,]
     # print(depth_map.shape, weights.shape, z_vals.shape)
-    if z_vals.shape[1] == 48:
+    if False and z_vals.shape[1] == 48:
         # 累积保存逻辑
         with torch.no_grad():
             cur_sigma = sigma.detach().cpu()
@@ -380,7 +382,7 @@ def render_rays(ray_batch,
                         mask_coarse_slice = mask_coarse_2d[:-H_exclude, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples2, N_views2, 1)
                         mask_slice = mask_2d[:-H_exclude, :-W_exclude, :, :, :].reshape(-1, N_total_samples, N_views3, 1)
                         
-                        mask_pruned = apply_source_view_pruning_sparse_vectorized(
+                        mask_pruned = source_view_pruning_share(
                             z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
                             effective_H, effective_W, window_size=window_size, top_k=model.sv_top_k,
                             sample_point_group_size=sample_point_group_size
@@ -397,7 +399,7 @@ def render_rays(ray_batch,
                         mask_coarse_slice = mask_coarse_2d[:-H_exclude, :, :, :, :].reshape(-1, N_coarse_samples2, N_views2, 1)
                         mask_slice = mask_2d[:-H_exclude, :, :, :, :].reshape(-1, N_total_samples, N_views3, 1)
                         
-                        mask_pruned = apply_source_view_pruning_sparse_vectorized(
+                        mask_pruned = source_view_pruning_share(
                             z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
                             effective_H, W, window_size=window_size, top_k=model.sv_top_k,
                             sample_point_group_size=sample_point_group_size
@@ -414,7 +416,7 @@ def render_rays(ray_batch,
                         mask_coarse_slice = mask_coarse_2d[:, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples2, N_views2, 1)
                         mask_slice = mask_2d[:, :-W_exclude, :, :, :].reshape(-1, N_total_samples, N_views3, 1)
                         
-                        mask_pruned = apply_source_view_pruning_sparse_vectorized(
+                        mask_pruned = source_view_pruning_share(
                             z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
                             H, effective_W, window_size=window_size, top_k=model.sv_top_k,
                             sample_point_group_size=sample_point_group_size
@@ -424,7 +426,7 @@ def render_rays(ray_batch,
                         
                     else:
                         # Case d: No remainders - full processing
-                        mask = apply_source_view_pruning_sparse_vectorized(
+                        mask = source_view_pruning_share(
                             z_vals_coarse, z_samples, blending_weights_valid, mask_coarse, mask, 
                             H, W, window_size=window_size, top_k=model.sv_top_k,
                             sample_point_group_size=sample_point_group_size

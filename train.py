@@ -71,8 +71,9 @@ def train(args):
     # 在程序初始化阶段清空 eval.log 文件
     log_file_path = os.path.join(out_folder, 'eval.log')
     if args.local_rank == 0:  # 只在 Rank 0 上操作
-        with open(log_file_path, 'w') as log_file:
-            log_file.write("")  # 清空文件内容
+        if os.path.exists(log_file_path):  # 检查文件是否存在
+            with open(log_file_path, 'w') as log_file:
+                log_file.write("")  # 清空文件内容
     print('outputs will be saved to {}'.format(out_folder))
     os.makedirs(out_folder, exist_ok=True)
 
@@ -132,7 +133,7 @@ def train(args):
                 train_sampler.set_epoch(epoch)
 
             # Start of core optimization loop
-            ray_sampler = RaySamplerSingleImage(train_data, device, resize_factor=args.resize_factor, sr=args.sr, use_moe=args.use_moe)
+            ray_sampler = RaySamplerSingleImage(train_data, args, device, resize_factor=args.resize_factor)
             N_rand = int(1.0 * args.N_rand * args.num_source_views / train_data['src_rgbs'][0].shape[0])
             ray_batch = ray_sampler.random_sample(N_rand,
                                                   sample_mode=args.sample_mode,
@@ -247,7 +248,7 @@ def train(args):
                 if global_step % args.i_img == 0 and not args.sr:
                     print('Logging a random validation view...')
                     val_data = next(val_loader_iterator)
-                    tmp_ray_sampler = RaySamplerSingleImage(val_data, device, render_stride=args.render_stride)
+                    tmp_ray_sampler = RaySamplerSingleImage(val_data, args, device, render_stride=args.render_stride)
                     H, W = tmp_ray_sampler.H, tmp_ray_sampler.W
                     gt_img = tmp_ray_sampler.rgb.reshape(H, W, 3)
                     log_view_to_tb(writer, global_step, args, model, tmp_ray_sampler, projector,
@@ -255,7 +256,7 @@ def train(args):
                     torch.cuda.empty_cache()
 
                     print('Logging current training view...')
-                    tmp_ray_train_sampler = RaySamplerSingleImage(train_data, device,
+                    tmp_ray_train_sampler = RaySamplerSingleImage(train_data, args, device,
                                                                   render_stride=1)
                     H, W = tmp_ray_train_sampler.H, tmp_ray_train_sampler.W
                     gt_img = tmp_ray_train_sampler.rgb.reshape(H, W, 3)
@@ -350,13 +351,14 @@ def eval(args, model, device):
         # if file_id != 'image000': continue
         
         with torch.no_grad():
-            ray_sampler = RaySamplerSingleImage(data, device, resize_factor=args.resize_factor, sr=args.sr)
+            ray_sampler = RaySamplerSingleImage(data, args, device, resize_factor=args.resize_factor)
             ray_batch = ray_sampler.get_all()
             featmaps = model.feature_net(ray_batch['src_rgbs'].squeeze(0).permute(0, 3, 1, 2))
             
             H, W = ray_sampler.H, ray_sampler.W
             ray_batch['H'] = H
             ray_batch['W'] = W
+            args.chunk_size = args.chunk_height * W
 
             ret = render_single_image(ray_sampler=ray_sampler,
                                       ray_batch=ray_batch,
@@ -384,7 +386,7 @@ def eval(args, model, device):
                 interpo_output = torch.nn.functional.interpolate(sr_input, scale_factor=2, mode='bicubic', align_corners=False).squeeze(0).permute(1, 2, 0)
                 # sr_output = model.sr_net(sr_input)
                 
-                tile = 16
+                tile = args.window_size * 2
                 tile_overlap = 0
                 scale = 2
                 b, c, h, w = sr_input.size()

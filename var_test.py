@@ -1,0 +1,23 @@
+import numpy as np
+
+# 示例张量
+tensor = np.array([0.34, 0.12, 0.15, 0.23, 0.04, 0.12, 0., 0.])
+print(np.sum(tensor))
+variance = np.var(tensor)
+print("Variance:", variance)
+tensor = np.array([0.66, 0.01, 0.05, 0.13, 0.03, 0.06, 0.06, 0.00])
+print(np.sum(tensor))
+variance = np.var(tensor)
+print("Variance:", variance)
+tensor = np.array([0.25, 0.37, 0.29, 0.06, 0.01, 0.01, 0.01, 0.00])
+print(np.sum(tensor))
+variance = np.var(tensor)
+print("Variance:", variance)
+tensor = np.array([0.04, 0.02, 0.00, 0.00, 0.00, 0.41, 0.22, 0.31])
+print(np.sum(tensor))
+variance = np.var(tensor)
+print("Variance:", variance)
+tensor = np.array([0.01, 0.01, 0.00, 0.00, 0.16, 0.70, 0.07, 0.05])
+print(np.sum(tensor))
+variance = np.var(tensor)
+print("Variance:", variance)

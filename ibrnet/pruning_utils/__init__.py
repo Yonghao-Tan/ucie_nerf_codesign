@@ -5,21 +5,20 @@ IBRNet Pruning Utilities Package
 
 from .source_view_pruning import (
     apply_source_view_pruning_optimized, 
-    apply_source_view_pruning_original,
-    apply_source_view_pruning_sparse,
+    apply_source_view_pruning_optimized_aggregated,
     apply_source_view_pruning_sparse_vectorized,
+    apply_source_view_pruning_sparse_vectorized_aggregated,
+    apply_source_view_pruning_2x2_windows_variance_based,
+    apply_source_view_pruning_2x2_windows_threshold_based,
     apply_source_view_pruning
 )
-from .visualization import visualize_depth_samples, visualize_mask_assignment
-from .benchmark import benchmark_pruning_methods
 
 __all__ = [
     'apply_source_view_pruning_optimized',
-    'apply_source_view_pruning_original', 
-    'apply_source_view_pruning_sparse',
+    'apply_source_view_pruning_optimized_aggregated',
     'apply_source_view_pruning_sparse_vectorized',
+    'apply_source_view_pruning_sparse_vectorized_aggregated',
+    'apply_source_view_pruning_2x2_windows_variance_based',
+    'apply_source_view_pruning_2x2_windows_threshold_based',
     'apply_source_view_pruning',
-    'visualize_depth_samples',
-    'visualize_mask_assignment',
-    'benchmark_pruning_methods'
 ]

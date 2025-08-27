@@ -160,7 +160,7 @@ if __name__ == '__main__':
 
         model.switch_to_eval()
         with torch.no_grad():
-            ray_sampler = RaySamplerSingleImage(data, device='cuda:0')
+            ray_sampler = RaySamplerSingleImage(data, args, device='cuda:0')
             ray_batch = ray_sampler.get_all()
             featmaps = model.feature_net(ray_batch['src_rgbs'].squeeze(0).permute(0, 3, 1, 2))
 

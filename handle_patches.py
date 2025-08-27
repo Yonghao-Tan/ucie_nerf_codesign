@@ -42,6 +42,12 @@ def handle_patches():
     original_filename = os.path.join(patches_dir, "original_image.png")
     image.save(original_filename)
     print(f"保存原始图片: {original_filename}")
+    low_filename = os.path.join(patches_dir, "original_image_low_reso.png")
+    H, W = image.size
+    low_image = image.resize((H // 2, W // 2), Image.NEAREST)
+    low_image = low_image.resize((H, W), Image.NEAREST)
+    low_image.save(low_filename)
+    print(f"保存low图片: {low_filename}")
     
     # 创建带红色框的图片副本
     image_with_box = image.copy()

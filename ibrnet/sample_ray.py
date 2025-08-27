@@ -41,7 +41,7 @@ def dilate_img(img, kernel_size=20):
 
 
 class RaySamplerSingleImage(object):
-    def __init__(self, data, device, resize_factor=1, render_stride=1, sr=False, use_moe=False):
+    def __init__(self, data, args, device, resize_factor=1, render_stride=1):
         super().__init__()
         self.render_stride = render_stride
         self.rgb = data['rgb'] if 'rgb' in data.keys() else None
@@ -56,8 +56,9 @@ class RaySamplerSingleImage(object):
 
         self.H = int(H[0])
         self.W = int(W[0])
-        self.sr = sr
-        self.use_moe = use_moe
+        self.sr = args.sr
+        self.use_moe = args.use_moe
+        self.sv_prune = args.sv_prune
         
         # half-resolution output
         if resize_factor != 1:
@@ -132,44 +133,48 @@ class RaySamplerSingleImage(object):
             # Random from one image
             select_inds = rng.choice(self.H*self.W, size=(N_rand,), replace=False)
         elif sample_mode == 'block_single':  # for super-resolution & moe
-            if self.sr and self.use_moe:  # When sr (super-resolution) is True
-                block_width = rng.randint(4, 8) * 5
-                # Ensure block_width is even # TODO why?
-                # if block_width % 2 != 0:
-                #     block_width += 1
-                select_inds_rgb = []  # Initialize a new list for rgb indices
-                block_height = block_width
-                rgb_block_width = block_width * 2  # For select_inds_rgb, use a block twice the size
-                rgb_block_height = rgb_block_width
-            elif self.sr:  # When sr (super-resolution) is True
-                block_width = rng.randint(16, 33)  # Regular block width for non-sr mode
-                # Ensure block_width is even
-                if block_width % 2 != 0:
-                    block_width += 1
-                select_inds_rgb = []  # Initialize a new list for rgb indices
-                block_height = block_width
-                rgb_block_width = block_width * 2  # For select_inds_rgb, use a block twice the size
-                rgb_block_height = rgb_block_width
-            elif self.use_moe:
-                # candidate_values = [20, 25, 30, 35, 40]
-                # block_height = np.random.choice(candidate_values)
-                block_height = 5
-                block_width = rng.randint(10, 25) * 5
-            else:
-                block_height = rng.randint(16, 33)  # Regular block width for non-sr mode
-                block_width = rng.randint(16, 33)  # Regular block width for non-sr mode
-            self.H_real, self.W_real = block_height, block_width
-            # Ensure the selected start positions leave space for the expanded block (for sr=True)
-            if self.sr:
-                max_row_start = self.H - rgb_block_height  # Ensure there's enough space for the larger block
-                max_col_start = self.W - rgb_block_width  # Same for the width dimension
-            else:
-                max_row_start = self.H - block_height  # Normal size when sr=False
-                max_col_start = self.W - block_width  # Same for the width dimension
-
-            # Randomly select a start position, making sure it's within bounds for the original block
-            select_row_start = rng.randint(block_height // 2 + 1, max_row_start)
-            select_col_start = rng.randint(block_width // 2 + 1, max_col_start)
+            exit_flag = False
+            while not exit_flag:
+                if self.sr and (self.sv_prune or self.use_moe):  # When sr (super-resolution) is True
+                    # block_width = rng.randint(4, 8) * 5
+                    block_width = rng.randint(3, 7) * 10 # TODO
+                    # Ensure block_width is even # TODO why?
+                    # if block_width % 2 != 0:
+                    #     block_width += 1
+                    select_inds_rgb = []  # Initialize a new list for rgb indices
+                    block_height = block_width
+                    rgb_block_width = block_width * 2  # For select_inds_rgb, use a block twice the size
+                    rgb_block_height = rgb_block_width
+                elif self.sr:  # When sr (super-resolution) is True
+                    block_width = rng.randint(16, 33)  # Regular block width for non-sr mode
+                    # Ensure block_width is even
+                    if block_width % 2 != 0:
+                        block_width += 1
+                    select_inds_rgb = []  # Initialize a new list for rgb indices
+                    block_height = block_width
+                    rgb_block_width = block_width * 2  # For select_inds_rgb, use a block twice the size
+                    rgb_block_height = rgb_block_width
+                elif self.use_moe:
+                    # candidate_values = [20, 25, 30, 35, 40]
+                    # block_height = np.random.choice(candidate_values)
+                    block_height = 5
+                    block_width = rng.randint(10, 25) * 5
+                else:
+                    block_height = rng.randint(16, 33)  # Regular block width for non-sr mode
+                    block_width = rng.randint(16, 33)  # Regular block width for non-sr mode
+                self.H_real, self.W_real = block_height, block_width
+                # Ensure the selected start positions leave space for the expanded block (for sr=True)
+                if self.sr:
+                    max_row_start = self.H - rgb_block_height # Ensure there's enough space for the larger block
+                    max_col_start = self.W - rgb_block_width  # Same for the width dimension
+                else:
+                    max_row_start = self.H - block_height # Normal size when sr=False
+                    max_col_start = self.W - block_width # Same for the width dimension
+                if block_height // 2 < max_row_start and block_width // 2 < max_col_start:
+                    exit_flag = True
+                    # Randomly select a start position, making sure it's within bounds for the original block
+                    select_row_start = rng.randint(block_height // 2, max_row_start)
+                    select_col_start = rng.randint(block_width // 2, max_col_start)
 
             # Generate select_inds for the original block (block_width x block_width)
             select_inds = []

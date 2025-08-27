@@ -26,6 +26,7 @@ from ibrnet.data_loaders import dataset_dict
 import tensorflow as tf
 from lpips_tensorflow import lpips_tf
 from torch.utils.data import DataLoader
+from ibrnet.quant_lsq import replace_linear_with_quantized
 
 # os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
@@ -37,6 +38,9 @@ if __name__ == '__main__':
 
     # Create IBRNet model
     model = IBRNetModel(args, load_scheduler=False, load_opt=False)
+    if args.q_bits < 16:
+        replace_linear_with_quantized(model.net_coarse, num_bits=args.q_bits, sparsity=args.sparsity)
+        replace_linear_with_quantized(model.net_fine, num_bits=args.q_bits, sparsity=args.sparsity)
     eval_dataset_name = args.eval_dataset
     extra_out_dir = '{}/{}'.format(eval_dataset_name, args.expname)
     extra_out_dir = extra_out_dir + '_sr' if args.sr else extra_out_dir

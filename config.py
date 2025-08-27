@@ -75,6 +75,10 @@ def config_parser():
     parser.add_argument('--sr', action='store_true', help='using super-resolution network')
     parser.add_argument('--sample_point_sparsity', action='store_true', help='using coarse sharing')
     parser.add_argument('--sv_prune', action='store_true', help='using source view pruning')
+    
+    parser.add_argument("--q_bits", type=int, default=16, help='quantize bits of weights')
+    parser.add_argument("--sparsity", type=float, default=None, help='quantize bits of weights')
+    
     ########## checkpoints ##########
     parser.add_argument("--no_reload", action='store_true',
                         help='do not reload weights from saved ckpt')

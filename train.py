@@ -25,6 +25,7 @@ from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 
 from ibrnet.data_loaders import dataset_dict
+from ibrnet.quant_lsq import replace_linear_with_quantized
 from ibrnet.render_ray import render_rays
 from ibrnet.render_image import render_single_image
 from ibrnet.model_sr import IBRNetModel

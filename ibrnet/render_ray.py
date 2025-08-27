@@ -18,9 +18,9 @@ from collections import OrderedDict
 import numpy as np
 from .pruning_utils import (
     apply_source_view_pruning, 
-    # apply_source_view_pruning_sparse_vectorized as source_view_pruning_share,
+    apply_source_view_pruning_sparse_vectorized as source_view_pruning_share,
     # apply_source_view_pruning_sparse_vectorized_aggregated as source_view_pruning_share，
-    apply_source_view_pruning_2x2_windows_threshold_based as source_view_pruning_share,
+    # apply_source_view_pruning_2x2_windows_threshold_based as source_view_pruning_share,
 )
 
 ########################################################################################################################

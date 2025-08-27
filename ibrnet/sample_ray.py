@@ -136,8 +136,8 @@ class RaySamplerSingleImage(object):
             exit_flag = False
             while not exit_flag:
                 if self.sr and (self.sv_prune or self.use_moe):  # When sr (super-resolution) is True
-                    # block_width = rng.randint(4, 8) * 5
-                    block_width = rng.randint(3, 7) * 10 # TODO
+                    block_width = rng.randint(4, 8) * 5
+                    # block_width = rng.randint(3, 7) * 10 # TODO
                     # Ensure block_width is even # TODO why?
                     # if block_width % 2 != 0:
                     #     block_width += 1

@@ -19,6 +19,7 @@ from ibrnet.mlp_network import IBRNet
 from ibrnet.feature_network import ResUNet
 from ibrnet.Omni_SR.components.OmniSR import OmniSR
 from ibrnet.moe_network import MOE
+from ibrnet.quant_lsq import replace_linear_with_quantized
 
 def de_parallel(model):
     return model.module if hasattr(model, 'module') else model
@@ -77,6 +78,10 @@ class IBRNetModel(object):
             # print(f"FLOPs: {flops * 2 / 1e12}TFLOPs")
             # print(f"Parameters: {params / 1e6}M")
 
+        if args.q_bits < 16: # TODO
+            replace_linear_with_quantized(self.net_coarse, device, num_bits=args.q_bits, sparsity=args.sparsity)
+            replace_linear_with_quantized(self.net_fine, device, num_bits=args.q_bits, sparsity=args.sparsity)
+        
         # optimizer and learning rate scheduler
         learnable_params = list(self.net_coarse.parameters())
         learnable_params += list(self.feature_net.parameters())
@@ -115,6 +120,7 @@ class IBRNetModel(object):
                                               load_scheduler=load_scheduler,
                                               load_psnr=load_psnr)
 
+        # find_unused_parameters=True,
         if args.distributed:
             self.net_coarse = torch.nn.parallel.DistributedDataParallel(
                 self.net_coarse,
@@ -188,11 +194,11 @@ class IBRNetModel(object):
         if load_scheduler:
             self.scheduler.load_state_dict(to_load['scheduler'])
 
-        self.net_coarse.load_state_dict(to_load['net_coarse'])
-        self.feature_net.load_state_dict(to_load['feature_net'])
+        self.net_coarse.load_state_dict(to_load['net_coarse'], strict=False)
+        self.feature_net.load_state_dict(to_load['feature_net'], strict=False)
 
         if self.net_fine is not None and 'net_fine' in to_load.keys():
-            self.net_fine.load_state_dict(to_load['net_fine'])
+            self.net_fine.load_state_dict(to_load['net_fine'], strict=False)
 
         if self.sr:
             self.sr_net.load_state_dict(to_load['sr_net'], strict=False)

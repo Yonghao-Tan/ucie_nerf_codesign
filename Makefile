@@ -9,7 +9,7 @@ test:
 
 test2:
 	cd ./eval && \
-	CUDA_VISIBLE_DEVICES=6 python eval.py --config ../configs/eval_llff_sr.txt --num_source_views 8 --resize_factor 0.5 --sr --sample_point_sparsity --window_size 5 --sv_prune --sv_top_k 5 --sample_point_group_size 8 --chunk_height 10 --eval_scenes fern --ckpt_path ../pretrained/model_share_moe_svprune_sr.pth --q_bits 8 --sparsity 0.5
+	CUDA_VISIBLE_DEVICES=6 python eval.py --config ../configs/eval_llff_sr.txt --num_source_views 8 --resize_factor 0.5 --sr --sample_point_sparsity --window_size 5 --sv_prune --sv_top_k 5 --sample_point_group_size 8 --chunk_height 10 --eval_scenes fern --ckpt_path ../pretrained/pretraining/model_best.pth --q_bits 8 --sparsity 0.5
 # SR didn't pruned
 tests:
 	cd ./eval && \

@@ -19,7 +19,7 @@ from ibrnet.mlp_network import IBRNet
 from ibrnet.feature_network import ResUNet
 from ibrnet.Omni_SR.components.OmniSR import OmniSR
 from ibrnet.moe_network import MOE
-from ibrnet.quant_lsq import replace_linear_with_quantized
+from ibrnet.quant_lsq import replace_linear_with_quantized, replace_conv2d_with_quantized
 
 def de_parallel(model):
     return model.module if hasattr(model, 'module') else model
@@ -81,6 +81,8 @@ class IBRNetModel(object):
         if args.q_bits < 16: # TODO
             replace_linear_with_quantized(self.net_coarse, device, num_bits=args.q_bits, sparsity=args.sparsity)
             replace_linear_with_quantized(self.net_fine, device, num_bits=args.q_bits, sparsity=args.sparsity)
+            if self.sr:
+                replace_conv2d_with_quantized(self.sr_net, device, num_bits=args.q_bits, sparsity=args.sparsity)
         
         # optimizer and learning rate scheduler
         learnable_params = list(self.net_coarse.parameters())

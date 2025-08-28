@@ -98,7 +98,7 @@ def train():
     graph = model.graph
 
     # 计算 GFLOPs 和延时
-    total_flops, total_latency, total_sram_access = calculate_flops_and_latency(graph, args.frequency, G=G)
+    total_flops, total_latency, total_sram_access, total_sram_latency = calculate_flops_and_latency(graph, args.frequency, G=G)
     
     H, W = 800, 800
     energy_flops, energy_sram = 0.718, 3.153
@@ -119,6 +119,7 @@ def train():
         print(f"Estimated pe energy: {pe_energy / 1e12:.3f}J, sram energy: {sram_energy / 1e12:.3f}J, total energy: {total_energy / 1e12:.3f} J")
         interpolation_energy = 96.13*(1024**3) * energy_sram + 0.149 * 1e12 * energy_flops * 2 # fp16=2INT8
         print(f"Estimated interpolation energy: {interpolation_energy / 1e12:.3f} J")
+        print(f"total_sram_latency: {25*total_sram_latency/4} cycles per tile")
         # print(f"Total Latency: {total_latency * 1e3:.3f} ms")
     else:
         print(f"Total FLOPs: {total_flops / 1e12:.3f} TFLOPs")
@@ -207,10 +208,13 @@ def calculate_flops_and_latency(graph, frequency, G):
     tmacs = calculate_tmacs(frequency)  # 计算 TMACs
     total_flops = 0
     total_latency = 0
+    total_sram_latency = 0
     total_sram_access = 0
 
     for node in graph.node:
         node_name = node.name if node.name else "Unnamed Node"
+        # if not ('ray_att' in node_name or 'rgb_fc' in node_name or 'out_geo' in node_name): continue
+        # if not ('ray_att' in node_name or 'rgb_fc' in node_name or 'out_geo' in node_name): continue
 
         if node.op_type == 'Conv':
             weight_shape = get_shape_from_initializer_or_value(graph, node.input[1])
@@ -240,6 +244,7 @@ def calculate_flops_and_latency(graph, frequency, G):
             total_latency += latency
             sram_access = calculate_conv_sram_os(output_shape, weight_shape)
             total_sram_access += sram_access
+            total_sram_latency += (sram_access / 256)
             
             # 打印单个节点的 FLOPs 和延时
             if G: print(f"Node: {node_name} (Conv) - FLOPs: {flops / 1e6:.3f} MFLOPs, Latency: {latency * 1e6:.3f} us, SRAM access: {sram_access / 1024:.3f}KB")
@@ -263,6 +268,7 @@ def calculate_flops_and_latency(graph, frequency, G):
 
             total_flops += flops
             total_latency += latency
+            total_sram_latency += (sram_access / 256)
 
             # 打印单个节点的 FLOPs 和延时
             if G: print(f"Node: {node_name} (DepthToSpace) - FLOPs: {flops / 1e6:.3f} MFLOPs, Latency: {latency * 1e6:.3f} us")
@@ -315,12 +321,13 @@ def calculate_flops_and_latency(graph, frequency, G):
             total_latency += latency
 
             total_sram_access += sram_access
+            total_sram_latency += (sram_access / 256)
             # print(input_shape_1, input_shape_2, factor_1, factor_2, input_1_size, input_2_size, factor_1, factor_2, flops, sram_access, flops / sram_access)
             # 打印单个节点的 FLOPs 和延时
             if G: print(f"Node: {node_name} ({node.op_type}) - FLOPs: {flops / 1e6:.3f} MFLOPs, Latency: {latency * 1e6:.3f} us, SRAM access: {sram_access / 1024:.3f}KB")
             else: print(f"Node: {node_name} ({node.op_type}) - FLOPs: {flops / 1e9:.3f} GFLOPs, Latency: {latency * 1e3:.3f} ms, SRAM access: {sram_access / (1024**2):.3f}MB")
 
-    return total_flops, total_latency, total_sram_access
+    return total_flops, total_latency, total_sram_access, total_sram_latency
 
 
 if __name__ == '__main__':

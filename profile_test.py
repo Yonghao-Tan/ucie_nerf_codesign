@@ -6,13 +6,21 @@ org_rgb_fc_ops = 0.559 * 1e6 * rays_per_tile
 org_attn_ops = org_after_d2d_ops - org_rgb_fc_ops
 
 proposed_sv_prune_rate = 0.52
+chn_sparsity_rate = 0.6
+sr_chn_sparsity_rate = 0.25
+fine_sharing_rate = 16/25
+basic_sv_prune_rate = 0.5
+
+proposed_sv_prune_rate = 0.52
 chn_sparsity_rate = 0.5
-sr_chn_sparsity_rate = 0.5
+sr_chn_sparsity_rate = 0.25
+fine_sharing_rate = 12/25
+basic_sv_prune_rate = 0.4
 
 lbuf_bandwidth = 2048
 d2d_bandwidth = 256
 
-ai_core_frequency = 1000 * 1e6
+ai_core_frequency = 1200 * 1e6
 ucie_frequency = 2000 * 1e6
 
 d2d_effective_bandwidth = d2d_bandwidth * ucie_frequency / ai_core_frequency
@@ -61,7 +69,6 @@ chn_pruned_d2d_transfer_cycles = 2 * ucie_process(chn_pruned_d2d_fmap_size, lbuf
 chn_pruned_total_cycles = mac_compute(chn_pruned_total_ops*chiplets, macs*chiplets) + chn_pruned_d2d_transfer_cycles
 print(f"No SV prune: {chn_pruned_total_cycles:.3f} cycles")
 
-basic_sv_prune_rate = 0.5
 basic_sv_chn_pruned_before_d2d_ops = chn_pruned_before_d2d_ops * (1 - basic_sv_prune_rate)
 basic_chn_pruned_rgb_fc_ops = chn_pruned_rgb_fc_ops * (1 - basic_sv_prune_rate)
 basic_sv_chn_pruned_ops = basic_sv_chn_pruned_before_d2d_ops + chn_pruned_attn_ops + basic_chn_pruned_rgb_fc_ops
@@ -75,7 +82,7 @@ speed_up_1 = basic_sv_chn_pruned_cycles / sv_chn_pruned_total_cycles
 print(f"Speed up 0: {speed_up_0:.3f}x")
 print(f"Speed up 1: {speed_up_1:.3f}x")
 
-sv_chn_pruned_total_cycles = basic_sv_chn_pruned_cycles # TODO
+sv_chn_pruned_total_cycles = basic_sv_chn_pruned_cycles * (1 - fine_sharing_rate) # TODO
 sv_chn_pruned_latency = sv_chn_pruned_total_cycles / ai_core_frequency
 sv_chn_pruned_latency_frame = sv_chn_pruned_latency * (400*400) / patch_size
 
@@ -91,7 +98,7 @@ sr_rate = 0.85
 total_pixels = H * W
 sr_pixels = total_pixels * sr_rate
 total_patches_base = total_pixels / (2 * 2 * patch_size)
-sr_total_ops = total_patches_base * sr_patch_ops
+sr_total_ops = total_patches_base * sr_patch_ops # Wrong
 
 total_patches_hr = total_patches_base * (1 - sr_rate) * 2 * 2
 total_patches_lr = total_patches_base * sr_rate
@@ -103,3 +110,18 @@ total_latency_frame = total_cycles_frame / ai_core_frequency
 print(f"Total_latency_frame: {total_latency_frame:.3f}")
 print(f"FPS: {1/total_latency_frame:.3f}")
 a = total_cycles_frame * (macs * 2 * 0.95)
+
+
+energy_ops, energy_sram = 0.0595 * 1e-12, 0.3567 * 1e-12
+total_nerf_ops = total_patches_nerf * basic_sv_chn_pruned_ops * (1 - fine_sharing_rate) * patch_size / rays_per_tile
+total_ops = total_nerf_ops + sr_total_ops
+org_ops = (coarse_ops + org_before_d2d_ops + org_after_d2d_ops) * 800 * 800 / (rays_per_tile)
+op_energy = total_ops * energy_ops
+op_tops_per_w = org_ops / op_energy
+print(f"Original OPs: {org_ops / 1e12:.3f}T")
+print(f"Original OPs/ray: {org_ops * 1e6 / (H*W*1e12):.3f}M")
+print(f"Optimized OPs: {total_ops / 1e12:.3f}T")
+print(f"Optimized OPs/ray: {total_ops * 1e6 / (H*W*1e12):.3f}M")
+print(f"Optimized Energy: {op_energy * 1e3:.3f}mJ")
+print(f"TOPS/W: {op_tops_per_w / 1e12:.3f}")
+# print(f"{total_patches_nerf}, {basic_sv_chn_pruned_ops/1e6:.3f}M, {total_nerf_ops/1e12:.3f}T, {sr_total_ops/1e12:.3f}T")

@@ -350,105 +350,102 @@ def render_rays(ray_batch,
         window_size = model.window_size # TODO
         # Apply source view pruning if we have coarse stage weights and mask
         if model.sv_prune and 'blending_weights_valid' in locals() and 'mask_coarse' in locals():
-            # try:
-                # Choose pruning method based on sample_point_sparsity setting
-                if hasattr(model, 'sample_point_sparsity') and model.sample_point_sparsity:
-                    # Use sparse pruning for sample_point_sparsity mode
-                    # Follow the same edge case handling as z_vals processing
-                    H_exclude, W_exclude = H % window_size, W % window_size
+            # Choose pruning method based on sample_point_sparsity setting
+            if hasattr(model, 'sample_point_sparsity') and model.sample_point_sparsity:
+                # Use sparse pruning for sample_point_sparsity mode
+                # Follow the same edge case handling as z_vals processing
+                H_exclude, W_exclude = H % window_size, W % window_size
+                
+                # Reshape all data to 2D format like z_vals processing
+                z_vals_coarse_2d = z_vals_coarse.reshape(H, W, -1)
+                z_samples_2d = z_samples.reshape(H, W, -1)
+                
+                # Get shape info for proper reshaping
+                _, N_coarse_samples, N_views, _ = blending_weights_valid.shape
+                _, N_coarse_samples2, N_views2, _ = mask_coarse.shape  
+                _, N_total_samples, N_views3, _ = mask.shape
+                
+                blending_weights_2d = blending_weights_valid.reshape(H, W, N_coarse_samples, N_views, 1)
+                mask_coarse_2d = mask_coarse.reshape(H, W, N_coarse_samples2, N_views2, 1)
+                mask_2d = mask.reshape(H, W, N_total_samples, N_views3, 1)
+                
+                # Get sample_point_grouping setting
+                sample_point_group_size = getattr(model, 'sample_point_group_size', None)
+                
+                if H_exclude > 0 and W_exclude > 0:
+                    # Case a: Both H and W have remainders
+                    effective_H, effective_W = H - H_exclude, W - W_exclude
+                    z_vals_coarse_slice = z_vals_coarse_2d[:-H_exclude, :-W_exclude, :].reshape(-1, z_vals_coarse_2d.shape[-1])
+                    z_samples_slice = z_samples_2d[:-H_exclude, :-W_exclude, :].reshape(-1, z_samples_2d.shape[-1])
+                    weights_slice = blending_weights_2d[:-H_exclude, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples, N_views, 1)
+                    mask_coarse_slice = mask_coarse_2d[:-H_exclude, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples2, N_views2, 1)
+                    mask_slice = mask_2d[:-H_exclude, :-W_exclude, :, :, :].reshape(-1, N_total_samples, N_views3, 1)
                     
-                    # Reshape all data to 2D format like z_vals processing
-                    z_vals_coarse_2d = z_vals_coarse.reshape(H, W, -1)
-                    z_samples_2d = z_samples.reshape(H, W, -1)
-                    
-                    # Get shape info for proper reshaping
-                    _, N_coarse_samples, N_views, _ = blending_weights_valid.shape
-                    _, N_coarse_samples2, N_views2, _ = mask_coarse.shape  
-                    _, N_total_samples, N_views3, _ = mask.shape
-                    
-                    blending_weights_2d = blending_weights_valid.reshape(H, W, N_coarse_samples, N_views, 1)
-                    mask_coarse_2d = mask_coarse.reshape(H, W, N_coarse_samples2, N_views2, 1)
-                    mask_2d = mask.reshape(H, W, N_total_samples, N_views3, 1)
-                    
-                    # Get sample_point_grouping setting
-                    sample_point_group_size = getattr(model, 'sample_point_group_size', None)
-                    
-                    if H_exclude > 0 and W_exclude > 0:
-                        # Case a: Both H and W have remainders
-                        effective_H, effective_W = H - H_exclude, W - W_exclude
-                        z_vals_coarse_slice = z_vals_coarse_2d[:-H_exclude, :-W_exclude, :].reshape(-1, z_vals_coarse_2d.shape[-1])
-                        z_samples_slice = z_samples_2d[:-H_exclude, :-W_exclude, :].reshape(-1, z_samples_2d.shape[-1])
-                        weights_slice = blending_weights_2d[:-H_exclude, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples, N_views, 1)
-                        mask_coarse_slice = mask_coarse_2d[:-H_exclude, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples2, N_views2, 1)
-                        mask_slice = mask_2d[:-H_exclude, :-W_exclude, :, :, :].reshape(-1, N_total_samples, N_views3, 1)
-                        
-                        mask_pruned = source_view_pruning_share(
-                            z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
-                            effective_H, effective_W, window_size=window_size, top_k=model.sv_top_k,
-                            sample_point_group_size=sample_point_group_size
-                        )
-                        mask_2d[:-H_exclude, :-W_exclude, :, :, :] = mask_pruned.reshape(effective_H, effective_W, N_total_samples, N_views3, 1)
-                        # print(f"Applied sparse pruning (case a): {effective_H}x{effective_W}, group_size={sample_point_group_size}")
-                        
-                    elif H_exclude > 0:
-                        # Case b: Only H has remainder
-                        effective_H = H - H_exclude
-                        z_vals_coarse_slice = z_vals_coarse_2d[:-H_exclude, :, :].reshape(-1, z_vals_coarse_2d.shape[-1])
-                        z_samples_slice = z_samples_2d[:-H_exclude, :, :].reshape(-1, z_samples_2d.shape[-1])
-                        weights_slice = blending_weights_2d[:-H_exclude, :, :, :, :].reshape(-1, N_coarse_samples, N_views, 1)
-                        mask_coarse_slice = mask_coarse_2d[:-H_exclude, :, :, :, :].reshape(-1, N_coarse_samples2, N_views2, 1)
-                        mask_slice = mask_2d[:-H_exclude, :, :, :, :].reshape(-1, N_total_samples, N_views3, 1)
-                        
-                        mask_pruned = source_view_pruning_share(
-                            z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
-                            effective_H, W, window_size=window_size, top_k=model.sv_top_k,
-                            sample_point_group_size=sample_point_group_size
-                        )
-                        mask_2d[:-H_exclude, :, :, :, :] = mask_pruned.reshape(effective_H, W, N_total_samples, N_views3, 1)
-                        # print(f"Applied sparse pruning (case b): {effective_H}x{W}, group_size={sample_point_group_size}")
-                        
-                    elif W_exclude > 0:
-                        # Case c: Only W has remainder
-                        effective_W = W - W_exclude
-                        z_vals_coarse_slice = z_vals_coarse_2d[:, :-W_exclude, :].reshape(-1, z_vals_coarse_2d.shape[-1])
-                        z_samples_slice = z_samples_2d[:, :-W_exclude, :].reshape(-1, z_samples_2d.shape[-1])
-                        weights_slice = blending_weights_2d[:, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples, N_views, 1)
-                        mask_coarse_slice = mask_coarse_2d[:, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples2, N_views2, 1)
-                        mask_slice = mask_2d[:, :-W_exclude, :, :, :].reshape(-1, N_total_samples, N_views3, 1)
-                        
-                        mask_pruned = source_view_pruning_share(
-                            z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
-                            H, effective_W, window_size=window_size, top_k=model.sv_top_k,
-                            sample_point_group_size=sample_point_group_size
-                        )
-                        mask_2d[:, :-W_exclude, :, :, :] = mask_pruned.reshape(H, effective_W, N_total_samples, N_views3, 1)
-                        # print(f"Applied sparse pruning (case c): {H}x{effective_W}, group_size={sample_point_group_size}")
-                        
-                    else:
-                        # Case d: No remainders - full processing
-                        mask = source_view_pruning_share(
-                            z_vals_coarse, z_samples, blending_weights_valid, mask_coarse, mask, 
-                            H, W, window_size=window_size, top_k=model.sv_top_k,
-                            sample_point_group_size=sample_point_group_size
-                        )
-                        # print(f"Applied sparse pruning (case d): {H}x{W}, group_size={sample_point_group_size}")
-                        
-                    # Reshape back to 1D if needed
-                    if H_exclude > 0 or W_exclude > 0:
-                        mask = mask_2d.reshape(-1, N_total_samples, N_views3, 1)
-                        
-                else:
-                    # Use standard pruning for non-sparse mode
-                    # Get sample_point_grouping setting for standard pruning too
-                    sample_point_group_size = getattr(model, 'sample_point_group_size', None)
-                    
-                    mask = apply_source_view_pruning(
-                        z_vals_coarse, z_samples, blending_weights_valid, mask_coarse, mask, 
-                        top_k=model.sv_top_k, sample_point_group_size=sample_point_group_size
+                    mask_pruned = source_view_pruning_share(
+                        z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
+                        effective_H, effective_W, window_size=window_size, top_k=model.sv_top_k,
+                        sample_point_group_size=sample_point_group_size
                     )
-                    print(f"Applied standard source view pruning: mask shape {mask.shape}, group_size={sample_point_group_size}")
-            # except Exception as e:
-            #     print(f"Source view pruning failed: {e}, using original mask")
+                    mask_2d[:-H_exclude, :-W_exclude, :, :, :] = mask_pruned.reshape(effective_H, effective_W, N_total_samples, N_views3, 1)
+                    # print(f"Applied sparse pruning (case a): {effective_H}x{effective_W}, group_size={sample_point_group_size}")
+                    
+                elif H_exclude > 0:
+                    # Case b: Only H has remainder
+                    effective_H = H - H_exclude
+                    z_vals_coarse_slice = z_vals_coarse_2d[:-H_exclude, :, :].reshape(-1, z_vals_coarse_2d.shape[-1])
+                    z_samples_slice = z_samples_2d[:-H_exclude, :, :].reshape(-1, z_samples_2d.shape[-1])
+                    weights_slice = blending_weights_2d[:-H_exclude, :, :, :, :].reshape(-1, N_coarse_samples, N_views, 1)
+                    mask_coarse_slice = mask_coarse_2d[:-H_exclude, :, :, :, :].reshape(-1, N_coarse_samples2, N_views2, 1)
+                    mask_slice = mask_2d[:-H_exclude, :, :, :, :].reshape(-1, N_total_samples, N_views3, 1)
+                    
+                    mask_pruned = source_view_pruning_share(
+                        z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
+                        effective_H, W, window_size=window_size, top_k=model.sv_top_k,
+                        sample_point_group_size=sample_point_group_size
+                    )
+                    mask_2d[:-H_exclude, :, :, :, :] = mask_pruned.reshape(effective_H, W, N_total_samples, N_views3, 1)
+                    # print(f"Applied sparse pruning (case b): {effective_H}x{W}, group_size={sample_point_group_size}")
+                    
+                elif W_exclude > 0:
+                    # Case c: Only W has remainder
+                    effective_W = W - W_exclude
+                    z_vals_coarse_slice = z_vals_coarse_2d[:, :-W_exclude, :].reshape(-1, z_vals_coarse_2d.shape[-1])
+                    z_samples_slice = z_samples_2d[:, :-W_exclude, :].reshape(-1, z_samples_2d.shape[-1])
+                    weights_slice = blending_weights_2d[:, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples, N_views, 1)
+                    mask_coarse_slice = mask_coarse_2d[:, :-W_exclude, :, :, :].reshape(-1, N_coarse_samples2, N_views2, 1)
+                    mask_slice = mask_2d[:, :-W_exclude, :, :, :].reshape(-1, N_total_samples, N_views3, 1)
+                    
+                    mask_pruned = source_view_pruning_share(
+                        z_vals_coarse_slice, z_samples_slice, weights_slice, mask_coarse_slice, mask_slice,
+                        H, effective_W, window_size=window_size, top_k=model.sv_top_k,
+                        sample_point_group_size=sample_point_group_size
+                    )
+                    mask_2d[:, :-W_exclude, :, :, :] = mask_pruned.reshape(H, effective_W, N_total_samples, N_views3, 1)
+                    # print(f"Applied sparse pruning (case c): {H}x{effective_W}, group_size={sample_point_group_size}")
+                    
+                else:
+                    # Case d: No remainders - full processing
+                    mask = source_view_pruning_share(
+                        z_vals_coarse, z_samples, blending_weights_valid, mask_coarse, mask, 
+                        H, W, window_size=window_size, top_k=model.sv_top_k,
+                        sample_point_group_size=sample_point_group_size
+                    )
+                    # print(f"Applied sparse pruning (case d): {H}x{W}, group_size={sample_point_group_size}")
+                    
+                # Reshape back to 1D if needed
+                if H_exclude > 0 or W_exclude > 0:
+                    mask = mask_2d.reshape(-1, N_total_samples, N_views3, 1)
+                    
+            else:
+                # Use standard pruning for non-sparse mode
+                # Get sample_point_grouping setting for standard pruning too
+                sample_point_group_size = getattr(model, 'sample_point_group_size', None)
+                
+                mask = apply_source_view_pruning(
+                    z_vals_coarse, z_samples, blending_weights_valid, mask_coarse, mask, 
+                    top_k=model.sv_top_k, sample_point_group_size=sample_point_group_size
+                )
+                print(f"Applied standard source view pruning: mask shape {mask.shape}, group_size={sample_point_group_size}")
         
         if model.use_moe and H % window_size == 0:
             rgb_feat, rgb_in, blending_weights_valid, raw_fine_org, mask = model.net_fine(rgb_feat_sampled, ray_diff, mask, return_moe=True)

@@ -1,0 +1,23 @@
+
+
+
+
+===================================High Resolution==============================
+Coarse: 好像可以改一下方法
+Window Size: 5x5
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8   3081.104095    6.706567        34.337621 tensor(0.1246)  tensor(0.0342)   tensor(0.0331) [Mode 0]
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8   3123.767624    6.799431        34.813088 tensor(0.1068)  tensor(0.0267)   tensor(0.0267) [Mode 1]
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8   1500.193149    3.265435        16.719027 tensor(0.0590)  tensor(0.0159)   tensor(0.0155) [Dual]
+
+
+Fine:
+Window Size: 5x5
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8   2578.709654    1.886116         9.656916 tensor(0.3847)  tensor(0.1027)   tensor(0.1002) [Mode 0]
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8   9299.164772    6.801582        34.824102 tensor(0.3204)  tensor(0.0801)   tensor(0.0801) [Mode 1]
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8   1828.555128    1.337439         6.847689 tensor(0.1813)  tensor(0.0479)   tensor(0.0470) [Dual]

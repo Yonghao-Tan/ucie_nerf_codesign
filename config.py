@@ -78,6 +78,8 @@ def config_parser():
     
     parser.add_argument("--q_bits", type=int, default=16, help='quantize bits of weights')
     parser.add_argument("--sparsity", type=float, default=None, help='quantize bits of weights')
+    parser.add_argument("--sr_sparsity", type=float, default=None, help='quantize bits of sr weights')
+    parser.add_argument('--no_frexp', action='store_true', help='not using frexp')
     
     ########## checkpoints ##########
     parser.add_argument("--no_reload", action='store_true',

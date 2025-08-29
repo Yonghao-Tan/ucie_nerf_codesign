@@ -10,13 +10,13 @@ import pandas as pd
 # 配置参数
 H_t = 756  # 图像高度
 W_t = 1008   # 图像宽度
+H_t = 378  # 图像高度
+W_t = 504   # 图像宽度
 H_s = 756
 W_s = 1008
 
 # 实验参数
-window_sizes = [[5, 5], [10, 10], [20, 20], [40, 40], [80, 80], [160, 160], [320, 320], [2000, 2000]]
-gs_values = [8, 16, 48]
-window_sizes = [[40, 40]]
+window_sizes = [[5, 5]]
 gs_values = [8]
 
 
@@ -34,7 +34,7 @@ if GENERATE_PLOTS:
     print(f"Created output directory: {output_dir}")
 
 # 加载张量
-pixel_locations = torch.load("./locations_hr/pixel_locations_0_n48.pt")
+pixel_locations = torch.load("./locations_lr/pixel_locations_0_n48.pt")
 print("Loaded tensor shape:", pixel_locations.shape)
 
 # Reshape 并提取切片
@@ -210,7 +210,15 @@ def run_single_experiment(window_size_h, window_size_w, gs):
                         # 计算矩形面积
                         rect_width = x_max - x_min
                         rect_height = y_max - y_min
-                        rect_area = rect_width * rect_height * 3 * 1.67
+                        num_source = window_flat.shape[0]
+                        
+                        source_color_mode_0 = rect_width * rect_height * 3
+                        source_color_mode_1 = num_source * 3
+                        source_feature_mode_0 = rect_width * rect_height / (4 * 4) * 32
+                        source_feature_mode_1 = num_source * 32
+                        rect_area = source_color_mode_1 + source_feature_mode_0
+                        # rect_area = source_color_mode_0 + source_feature_mode_0 # MODE 0
+                        # rect_area = source_color_mode_1 + source_feature_mode_1 # MODE 1
                         
                         valid_windows += 1
                         total_valid_windows += 1

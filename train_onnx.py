@@ -85,8 +85,8 @@ def train():
     # print("Simplified onnx model saved at {}".format(onnx_path_simp))
     
     parser = argparse.ArgumentParser(description="Calculate GFLOPs and latency for an ONNX model.")
-    parser.add_argument("--model_path", type=str, default="/home/ytanaz/access/IBRNet/onnx/ibrnet_generalizable_48_simp_s8.onnx", help="Path to the ONNX model file.")
-    # parser.add_argument("--model_path", type=str, default="/home/ytanaz/access/IBRNet/onnx/osr_simp.onnx", help="Path to the ONNX model file.")
+    # parser.add_argument("--model_path", type=str, default="/home/ytanaz/access/IBRNet/onnx/ibrnet_generalizable_48_simp_s8.onnx", help="Path to the ONNX model file.")
+    parser.add_argument("--model_path", type=str, default="/home/ytanaz/access/IBRNet/onnx/osr_simp.onnx", help="Path to the ONNX model file.")
     
     parser.add_argument("--frequency", type=int, default=500, help="Frequency in MHz (default: 500 MHz).")
     args = parser.parse_args()

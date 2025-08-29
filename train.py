@@ -347,6 +347,7 @@ def eval(args, model, device):
     total_fine_psnr = 0.
     cnt = 0
     for i, data in enumerate(test_loader):
+        if i > 0: continue
         rgb_path = data['rgb_path'][0]
         file_id = os.path.basename(rgb_path).split('.')[0]
         # if file_id != 'image000': continue

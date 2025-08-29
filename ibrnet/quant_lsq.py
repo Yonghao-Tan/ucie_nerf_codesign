@@ -92,7 +92,8 @@ def replace_linear_with_quantized(model: nn.Module,
                                   device,
                                 num_bits: int = 1,
                                 skip_layers: Optional[list] = None,
-                                sparsity: float = None) -> nn.Module:
+                                sparsity: float = None,
+                                no_frexp=False) -> nn.Module:
     """
     Args:
         initial_scale_value: Value to initialize QuantizedLinear's scale parameter with.
@@ -112,7 +113,8 @@ def replace_linear_with_quantized(model: nn.Module,
                     num_bits=num_bits,
                     device=child_module.weight.device,
                     dtype=child_module.weight.dtype,
-                    sparsity=sparsity
+                    sparsity=sparsity,
+                    no_frexp=no_frexp
                 )
                 
                 with torch.no_grad():
@@ -122,7 +124,7 @@ def replace_linear_with_quantized(model: nn.Module,
                     quantized_layer._init()
 
                 setattr(module, child_name, quantized_layer)
-                print(f"Replaced {full_name} with QuantizedLinear ({num_bits}-bit)")
+                # print(f"Replaced {full_name} with QuantizedLinear ({num_bits}-bit)")
             else:
                 _replace_module(child_module, full_name)
     
@@ -133,7 +135,8 @@ def replace_conv2d_with_quantized(model: nn.Module,
                                   device,
                                 num_bits: int = 1,
                                 skip_layers: Optional[list] = None,
-                                sparsity: float = None) -> nn.Module:
+                                sparsity: float = None,
+                                no_frexp=False) -> nn.Module:
     """
     Args:
         initial_scale_value: Value to initialize QuantizedConv2d's scale parameter with.
@@ -157,7 +160,8 @@ def replace_conv2d_with_quantized(model: nn.Module,
                     num_bits=num_bits,
                     device=child_module.weight.device,
                     dtype=child_module.weight.dtype,
-                    sparsity=sparsity
+                    sparsity=sparsity,
+                    no_frexp=no_frexp
                 )
 
                 with torch.no_grad():
@@ -167,7 +171,7 @@ def replace_conv2d_with_quantized(model: nn.Module,
                     quantized_layer._init()
 
                 setattr(module, child_name, quantized_layer)
-                print(f"Replaced {full_name} with QuantizedConv2d ({num_bits}-bit)")
+                # print(f"Replaced {full_name} with QuantizedConv2d ({num_bits}-bit)")
             else:
                 _replace_module(child_module, full_name)
     
@@ -182,7 +186,8 @@ class QuantizedLinear(nn.Linear):
                  num_bits: int = 1,
                  device=None,
                  dtype=None,
-                 sparsity=None
+                 sparsity=None,
+                 no_frexp=False
                  ):
         super(QuantizedLinear, self).__init__(in_features, out_features, bias, device, dtype)
 
@@ -193,6 +198,7 @@ class QuantizedLinear(nn.Linear):
         self.group_size = None
         
         self.sparsity = sparsity
+        self.no_frexp = no_frexp
     
         self.scale = None  # Will be initialized in init_from method
         
@@ -227,9 +233,10 @@ class QuantizedLinear(nn.Linear):
         s_grad_scale = 1.0 / ((self.thd_pos * x.shape[-1]) ** 0.5)
         scale_factors = grad_scale(scale_factors, s_grad_scale)
         
-        scale_m, scale_e =  batch_frexp_new(scale_factors.detach(), bit=8)
-        scale = (scale_m / torch.pow(2, scale_e)).type(torch.float32)
-        scale_factors = (scale - scale_factors).detach() + scale_factors
+        if not self.no_frexp:
+            scale_m, scale_e =  batch_frexp_new(scale_factors.detach(), bit=8)
+            scale = (scale_m / torch.pow(2, scale_e)).type(torch.float32)
+            scale_factors = (scale - scale_factors).detach() + scale_factors
                                                                        
         x_scaled = x / scale_factors
         x_scaled = torch.clamp(x_scaled, self.thd_neg, self.thd_pos)
@@ -246,9 +253,10 @@ class QuantizedLinear(nn.Linear):
         s_grad_scale = 1.0 / ((self.thd_pos * x.numel()) ** 0.5)
         scale_factors = grad_scale(scale_factors, s_grad_scale)
         
-        pow = torch.round(torch.log2(scale_factors.detach()))
-        clip_val = torch.pow(2, pow)
-        scale_factors = (clip_val - scale_factors).detach() + scale_factors
+        if not self.no_frexp:
+            pow = torch.round(torch.log2(scale_factors.detach()))
+            clip_val = torch.pow(2, pow)
+            scale_factors = (clip_val - scale_factors).detach() + scale_factors
                                                                        
         x_scaled = x / scale_factors
         x_scaled = torch.clamp(x_scaled, self.thd_neg, self.thd_pos)
@@ -289,7 +297,8 @@ class QuantizedConv2d(nn.Conv2d):
                  num_bits: int = 1,
                  device=None,
                  dtype=None,
-                 sparsity=None
+                 sparsity=None,
+                 no_frexp=False
                  ):
         super(QuantizedConv2d, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
 
@@ -299,7 +308,11 @@ class QuantizedConv2d(nn.Conv2d):
         self.num_bits = num_bits
         self.group_size = None
         
-        self.sparsity = sparsity
+        if self.groups != 1:
+            self.sparsity = None
+        else:
+            self.sparsity = sparsity
+        self.no_frexp = no_frexp
     
         self.scale = None  # Will be initialized in init_from method
         
@@ -334,9 +347,11 @@ class QuantizedConv2d(nn.Conv2d):
         s_grad_scale = 1.0 / ((self.thd_pos * x.shape[-3]*x.shape[-2]* x.shape[-1]) ** 0.5)
         scale_factors = grad_scale(scale_factors, s_grad_scale)
         
-        scale_m, scale_e =  batch_frexp_new(scale_factors.detach(), bit=8)
-        scale = (scale_m / torch.pow(2, scale_e)).type(torch.float32)
-        scale_factors = (scale - scale_factors).detach() + scale_factors
+        if not self.no_frexp:
+            scale_m, scale_e =  batch_frexp_new(scale_factors.detach(), bit=8)
+            scale = (scale_m / torch.pow(2, scale_e)).type(torch.float32)
+            scale_factors = (scale - scale_factors).detach() + scale_factors
+        
         scale_factors = scale_factors.view(scale_factors.shape[0],1,1,1)
                                                                        
         x_scaled = x / scale_factors
@@ -354,9 +369,10 @@ class QuantizedConv2d(nn.Conv2d):
         s_grad_scale = 1.0 / ((self.thd_pos * x.numel()) ** 0.5)
         scale_factors = grad_scale(scale_factors, s_grad_scale)
         
-        pow = torch.round(torch.log2(scale_factors.detach()))
-        clip_val = torch.pow(2, pow)
-        scale_factors = (clip_val - scale_factors).detach() + scale_factors
+        if not self.no_frexp:
+            pow = torch.round(torch.log2(scale_factors.detach()))
+            clip_val = torch.pow(2, pow)
+            scale_factors = (clip_val - scale_factors).detach() + scale_factors
                                                                        
         x_scaled = x / scale_factors
         x_scaled = torch.clamp(x_scaled, self.thd_neg, self.thd_pos)

@@ -79,10 +79,11 @@ class IBRNetModel(object):
             # print(f"Parameters: {params / 1e6}M")
 
         if args.q_bits < 16: # TODO
-            replace_linear_with_quantized(self.net_coarse, device, num_bits=args.q_bits, sparsity=args.sparsity)
-            replace_linear_with_quantized(self.net_fine, device, num_bits=args.q_bits, sparsity=args.sparsity)
-            if self.sr:
-                replace_conv2d_with_quantized(self.sr_net, device, num_bits=args.q_bits, sparsity=args.sparsity)
+            replace_linear_with_quantized(self.net_coarse, device, num_bits=args.q_bits, sparsity=args.sparsity, no_frexp=args.no_frexp)
+            replace_linear_with_quantized(self.net_fine, device, num_bits=args.q_bits, sparsity=args.sparsity, no_frexp=args.no_frexp)
+            # if self.sr:
+            #     replace_conv2d_with_quantized(self.sr_net, device, num_bits=args.q_bits, sparsity=args.sr_sparsity, no_frexp=args.no_frexp)
+                # replace_conv2d_with_quantized(self.sr_net, device, num_bits=args.q_bits, sparsity=None, no_frexp=args.no_frexp)
         
         # optimizer and learning rate scheduler
         learnable_params = list(self.net_coarse.parameters())

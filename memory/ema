@@ -19,6 +19,9 @@ Window Size: 40x40
  GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
   8    201.476916   26.535352         2.122828 tensor(0.4769)  tensor(0.1280)   tensor(0.1218)
 
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8     121.93297   60.057413         1.201148 tensor(1.1435)  tensor(0.2983)   tensor(0.2949)
+  
 Fine:
 Window Size: 5x5
  GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
@@ -36,4 +39,6 @@ Window Size: 40x40
  GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
   8    362.878799   16.074922         1.285994 tensor(1.4722)  tensor(0.3713)   tensor(0.3700)
 
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8    274.242974   45.083449         0.901669 tensor(3.2181)  tensor(0.8148)   tensor(0.8078)
 ================================Low Resolution===============================

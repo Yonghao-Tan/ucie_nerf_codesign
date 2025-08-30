@@ -5,11 +5,11 @@
 
 test:
 	cd ./eval && \
-	CUDA_VISIBLE_DEVICES=6 python eval.py --config ../configs/eval_llff.txt --num_source_views 8 --chunk_height 15 --eval_scenes fern --resize_factor 0.5
+	CUDA_VISIBLE_DEVICES=6 python eval.py --config ../configs/eval_llff.txt --num_source_views 8 --chunk_height 15 --eval_scenes fern
 
 test2:
 	cd ./eval && \
-	CUDA_VISIBLE_DEVICES=6 python eval.py --config ../configs/eval_llff_sr.txt --num_source_views 8 --resize_factor 0.5 --sr --sample_point_sparsity --window_size 5 --sv_top_k 5 --sample_point_group_size 8 --chunk_height 10 --eval_scenes fern --ckpt_path ../pretrained/pretraining/model_best.pth --q_bits 8 --sparsity 0.6 --no_frexp
+	CUDA_VISIBLE_DEVICES=6 python eval.py --config ../configs/eval_llff_sr.txt --eval_scenes fern --chunk_height 10 --num_source_views 8 --ckpt_path ../pretrained/model_share_svprune_5_sr_w8a8_s50.pth --resize_factor 0.5 --sr --window_size 5 --sample_point_sparsity --sv_prune --sv_top_k 5 --sparsity 0.5 --sample_point_group_size 8 --q_bits 8 --use_moe
 
 tests:
 	cd ./eval && \

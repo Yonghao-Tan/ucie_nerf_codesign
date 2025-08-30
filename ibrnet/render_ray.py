@@ -28,7 +28,7 @@ from .pruning_utils import (
 ########################################################################################################################
 
 
-def sample_pdf(bins, weights, N_samples, det=False):
+def sample_pdf(bins, weights, N_samples, det=False): # 254 per ray?
     '''
     :param bins: tensor of shape [N_rays, M+1], M is the number of bins
     :param weights: tensor of shape [N_rays, M]
@@ -132,7 +132,7 @@ infos_depth_map = None
 infos_weights = None
 save_idx = 0
 
-def raw2outputs(raw, z_vals, mask, white_bkgd=False):
+def raw2outputs(raw, z_vals, mask, white_bkgd=False): # 809 per ray?
     global infos_sigma, infos_depth_map, infos_weights, save_idx
     
     '''

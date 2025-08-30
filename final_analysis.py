@@ -25,24 +25,33 @@ def train():
     
     optimizations = {}
     hardware_configurations = {
+        'Mode': 1, # 0: efficiency; 1: performance
         'MACs': 2048,
-        'Tm': 8,
+        'Tm': 16,
         'Trc': 16,
-        'MAC Efficiency': 0.95,
-        'AI Core Frequency': 1000 * 1e6,
+        'MAC Efficiency': 1., # 如果这个小了那功耗也应该变小? 好像没变应该是除的时候化过
         'Activation Buffer Bandwidth': 2048 / 8,
         'Weight Buffer Bandwidth': 1024 / 8,
         'Chiplets': 4,
-        'OP Energy': 0.105 * 1e-12,
-        'SRAM Energy': 1.085 * 1e-12,
-        'DRAM Bandwidth': 12.8 * 1000 ** 3,
-        'DRAM Energy': 112.54 * 1e-12,
+        'DRAM Bandwidth': 25.6 * 1000 ** 3,
+        # 'DRAM Energy': 112.54 * 1e-12,
+        'DRAM Energy': 60.4 * 1e-12,
         'UCIE Bandwidth': 64 * 1000 ** 3,
         'UCIE Energy': 1.108 * 8 * 1e-12,
-        # 'OP Energy': 0.273 * 1e-12,
-        # 'SRAM Energy': 2.941 * 1e-12,
+        'OP per Projection': 16, # [3, 4] @ [4, 1] (12), & 1 division (4)
+        'OP per Interpolation': 13*2, # ?
         # 'UCIe Bandwidth':    
     }
+    mac_scaling = 2.5
+    sram_scaling = 1.25
+    if hardware_configurations['Mode'] == 1:
+        hardware_configurations['AI Core Frequency'] = 1200 * 1e6
+        hardware_configurations['OP Energy'] = 0.273 * 1e-12 / mac_scaling
+        hardware_configurations['SRAM Energy'] = 2.430 * 1e-12 / sram_scaling
+    else:
+        hardware_configurations['AI Core Frequency'] = 800 * 1e6
+        hardware_configurations['OP Energy'] = 0.105 * 1e-12 / mac_scaling
+        hardware_configurations['SRAM Energy'] = 0.897 * 1e-12 / sram_scaling
     
     nerf_config = {
         'H': 800,
@@ -72,10 +81,10 @@ def train():
 
     ray_skip = 25
     sv_ratio = 0.5
-    fine_sharing = 0/25
+    fine_sharing = 9/25
     nerf_sparsity = 0.5
     sr_sparsity = 0.25
-    select_sr = 0.85
+    select_sr = 0.9
     
     # ----------------------------------- Baseline -----------------------------------
     print(f"------------- Baseline -------------")
@@ -114,9 +123,12 @@ def train():
     
     
     # ----------------------------------- Solution 1a -----------------------------------
+    # rgb复用？
     print(f"------------- Solution 1 -------------")
-    solution1_dram_access_sv_coarse = 201.476916 * (1024 ** 2) # assume 5x5 tile, no unified cache
-    solution1_dram_access_sv_fine = 362.878799 * (1024 ** 2) # assume 5x5 tile, no unified cache
+    # solution1_dram_access_sv_coarse = 201.476916 * (1024 ** 2) # assume 5x5 tile, no unified cache
+    # solution1_dram_access_sv_fine = 362.878799 * (1024 ** 2) # assume 5x5 tile, no unified cache
+    solution1_dram_access_sv_coarse = 108.818 * (1024 ** 2) # assume 5x5 tile, no unified cache
+    solution1_dram_access_sv_fine = 108.818 * (1024 ** 2) # assume 5x5 tile, no unified cache
     solution1_dram_access_weight = (0.04 + 0.75) * (1024 ** 2) * hardware_configurations['Chiplets']
     solution1_dram_access = solution1_dram_access_weight + solution1_dram_access_sv_coarse + solution1_dram_access_sv_fine
     solution1_dram_energy = solution1_dram_access * hardware_configurations['DRAM Energy']
@@ -288,7 +300,7 @@ def train():
     print(f"Total OPs: {total_mac_ops/1e12:.3f}T, NeRF OPs: {nerf_total_mac_ops/1e12:.3f}T, sr OPs: {sr_total_mac_ops/1e12:.3f}T")
     print(f"Total Latency: {total_mac_latency:.3f}s, NeRF Latency: {nerf_total_mac_latency:.3f}s, SR Latency: {sr_total_mac_latency:.3f}s")
     # print(f"MAC Energy: {}")
-    print(f"Total Energy: {total_energy:.3f}J, NeRF Energy: {nerf_total_energy:.3f}J, SR Energy: {sr_total_energy:.3f}J")
+    print(f"Total Energy: {total_energy*1e3:.2f}mJ, NeRF Energy: {nerf_total_energy:.3f}J, SR Energy: {sr_total_energy:.3f}J")
     print(f"NeRF SRAM Ratio: {nerf_total_sram_energy/total_energy:.3f}, SR SRAM Ratio: {sr_total_sram_energy/total_energy:.3f}")
     results['ALL']['OPs'] = total_mac_ops
     results['ALL']['Chip Latency'] = total_mac_latency
@@ -311,8 +323,30 @@ def train():
     results['ALL']['Inter-Chip Energy'] = sr_solution1_d2d_energy
     print(f"SR D2D Access: {sr_solution1_d2d_access/1e9:.3f}GB; SR D2D Energy: {sr_solution1_d2d_energy:.3f}J, SR D2D Latency: {sr_solution1_d2d_latency:.3f}s")
     
+    # Projection & Interpolation, SRAM & Compute Latency Hide? 还没考虑fine sharing情况，不过Fine只减少计算，投影都要做的？检查一下结构 会不会只需要rgb的话有些不用
+    projection_sr_solution1_sram_access = patch_size * total_patches_nerf * (16. / ray_skipping_size + 48) * 3 * (1 - optimizations['SV Pruning']) # 3是3d pts大小
+    projection_sr_solution1_proj_ops = hardware_configurations['OP per Projection'] * patch_size * total_patches_nerf * (16. / ray_skipping_size + 48) * (1 - optimizations['SV Pruning'])
+    
+    interpolation_sr_solution1_sram_access = sr_solution1_d2d_access + patch_size * total_patches_nerf * (16. / ray_skipping_size + 48) * (3 + 32) * (1 - optimizations['SV Pruning']) + projection_sr_solution1_sram_access
+    interpolation_sr_solution1_sram_energy = interpolation_sr_solution1_sram_access * hardware_configurations['SRAM Energy']
+    interpolation_sr_solution1_interpolation_ops = hardware_configurations['OP per Interpolation'] * patch_size * total_patches_nerf * (16. / ray_skipping_size + 48) * (3 + 32) * (1 - optimizations['SV Pruning']) + projection_sr_solution1_proj_ops # coarse没有SV Prune
+    interpolation_sr_solution1_interpolation_energy = interpolation_sr_solution1_interpolation_ops * hardware_configurations['OP Energy']
+    print(f"Interpolation SRAM Access: {interpolation_sr_solution1_sram_access/1e9:.3f}GB, OP: {interpolation_sr_solution1_interpolation_ops/1e9:.3f}G")
+    print(f"Interpolation SRAM Energy: {interpolation_sr_solution1_sram_energy:.3f}J, OP Energy: {interpolation_sr_solution1_interpolation_energy:.6f}J")
+    
+    # results['ALL']['Chip Latency'] += total_mac_latency
+    total_interpolation_energy = sr_solution1_d2d_energy + interpolation_sr_solution1_sram_energy + interpolation_sr_solution1_interpolation_energy
+    print(f"{results['ALL']['Chip Energy']:.2f}J, {total_interpolation_energy:.2f}J, {results['ALL']['Inter-Chip Energy']:.2f}J")
+    results['ALL']['Chip Energy'] += total_interpolation_energy
+    
     org_mac_ops = results['Baseline']['OPs']
     print(f"TOPS/W: {org_mac_ops*1e-12/total_energy:.3f}")
+    total_energy = results['ALL']['Chip Energy'] # + results['ALL']['Inter-Chip Energy'] 算过了
+    print(f"Final FPS per Frame: {1/total_mac_latency:.2f}")
+    print(f"Final Energy per Frame: {total_energy*1e3:.2f}mJ")
+    print(f"Final Energy per Pixel: {total_energy*1e6/(H*W):.2f}μJ")
+    print(f"TOPS/W Theoretical Scaling Number: {org_mac_ops/total_mac_ops:.2f}x")
+    print(f"TOPS/W with Interpolation: {org_mac_ops*1e-12/total_energy:.3f}")
     
 # 定义卷积层 FLOPs 计算
 def calculate_conv_flops(output_shape, weight_shape):
@@ -346,11 +380,11 @@ def depthtospace_latency(input_shape, frequency):
     return flops / (frequency * 1e6)
 
 # 计算 ops
-def calculate_ops(macs, frequency, efficiency=0.95):
-    return macs * frequency * efficiency * 2
+def calculate_ops(macs, frequency, num_chiplets, efficiency=0.95):
+    return macs * frequency * efficiency * 2 * num_chiplets
 
-def calculate_bandwidth(bandwidth, frequency, efficiency=0.95):
-    return bandwidth * frequency * efficiency
+def calculate_bandwidth(bandwidth, frequency, num_chiplets, efficiency=0.95):
+    return bandwidth * frequency * efficiency * num_chiplets
 
 # 获取权重或输入的形状
 def get_shape_from_initializer_or_value(graph, name):
@@ -383,7 +417,8 @@ def calculate_flops_and_latency(graph, hardware_configurations, optimizations, G
     ai_core_frequency = hardware_configurations['AI Core Frequency']
     activation_buffer_bandwidth_cycle = hardware_configurations['Activation Buffer Bandwidth']
     weight_buffer_bandwidth_cycle = hardware_configurations['Weight Buffer Bandwidth']
-    ops = calculate_ops(macs, ai_core_frequency, macs_efficiency)  # 计算 ops
+    num_chiplets = hardware_configurations['Chiplets']
+    ops = calculate_ops(macs, ai_core_frequency, num_chiplets, macs_efficiency)  # 计算 ops
     activation_buffer_bandwidth = calculate_bandwidth(activation_buffer_bandwidth_cycle, ai_core_frequency, macs_efficiency)
     weight_buffer_bandwidth = calculate_bandwidth(weight_buffer_bandwidth_cycle, ai_core_frequency, macs_efficiency)
     # print(f'{activation_buffer_bandwidth/1e9:.3f}, {ops/1e9:.3f}')

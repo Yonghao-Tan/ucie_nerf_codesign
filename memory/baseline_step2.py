@@ -12,11 +12,14 @@ H_t = 756  # 图像高度
 W_t = 1008   # 图像宽度
 H_t = 378  # 图像高度
 W_t = 504   # 图像宽度
-H_s = 756
-W_s = 1008
+
+H_t = 800  # 图像高度
+W_t = 800   # 图像宽度
+H_s = 800
+W_s = 800
 
 # 实验参数
-window_sizes = [[5, 5]]
+window_sizes = [[20, 20]] # TODO
 gs_values = [8]
 
 
@@ -34,7 +37,7 @@ if GENERATE_PLOTS:
     print(f"Created output directory: {output_dir}")
 
 # 加载张量
-pixel_locations = torch.load("./locations_lr/pixel_locations_0_n48.pt")
+pixel_locations = torch.load("./nerf_synthetic/locations_hr/pixel_locations_0_n16.pt")
 print("Loaded tensor shape:", pixel_locations.shape)
 
 # Reshape 并提取切片
@@ -169,7 +172,9 @@ def run_single_experiment(window_size_h, window_size_w, gs):
     window_size_h = np.minimum(window_size_h, H_s)
     window_size_w = np.minimum(window_size_w, W_s)
     
-    total_area = 0.
+    total_area_dual = 0.
+    total_area_mode_0 = 0.
+    total_area_mode_1 = 0.
     total_valid_windows = 0
     # 遍历所有source views
     all_windows = []
@@ -216,16 +221,19 @@ def run_single_experiment(window_size_h, window_size_w, gs):
                         source_color_mode_1 = num_source * 3
                         source_feature_mode_0 = rect_width * rect_height / (4 * 4) * 32
                         source_feature_mode_1 = num_source * 32
-                        rect_area = source_color_mode_1 + source_feature_mode_0
-                        # rect_area = source_color_mode_0 + source_feature_mode_0 # MODE 0
-                        # rect_area = source_color_mode_1 + source_feature_mode_1 # MODE 1
+                        # rect_dual = source_color_mode_1 + source_feature_mode_0 # TODO
+                        rect_dual = np.minimum(source_color_mode_1, source_color_mode_1) + np.minimum(source_feature_mode_0, source_feature_mode_1)
+                        rect_mode_0 = source_color_mode_0 + source_feature_mode_0 # MODE 0
+                        rect_mode_1 = source_color_mode_1 + source_feature_mode_1 # MODE 1
                         
                         valid_windows += 1
                         total_valid_windows += 1
-                        total_area += rect_area # TODO
+                        total_area_dual += rect_dual # TODO
+                        total_area_mode_0 += rect_mode_0 # TODO
+                        total_area_mode_1 += rect_mode_1 # TODO
                     else:
-                        rect_area = 0
-                    patch_windows_w.append(torch.tensor(rect_area, dtype=torch.float32))
+                        rect_dual = 0
+                    patch_windows_w.append(torch.tensor(rect_dual, dtype=torch.float32))
                 patch_windows_h.append(torch.stack(patch_windows_w))
             source_view_windows.append(torch.stack(patch_windows_h))
         all_windows.append(torch.stack(source_view_windows))
@@ -257,17 +265,21 @@ def run_single_experiment(window_size_h, window_size_w, gs):
                 max_area_agg2 = tmp_area_agg2
     # max_area = max_area / (all_windows.shape[0] * all_windows.shape[1])
     # 计算指标
-    total_mem_mb = total_area / (1024**2)
-    avg_mem_kb = total_area / (1024**1 * total_valid_windows) if total_valid_windows > 0 else 0
+    total_mem_mb_dual = total_area_dual / (1024**2)
+    total_mem_mb_mode_0 = total_area_mode_0 / (1024**2)
+    total_mem_mb_mode_1 = total_area_mode_1 / (1024**2)
+    avg_mem_kb = total_area_dual / (1024**1 * total_valid_windows) if total_valid_windows > 0 else 0
     
-    effective_pixel = total_area / (total_valid_windows * window_size_h * window_size_w * gs) if total_valid_windows > 0 else 0
+    effective_pixel = total_area_dual / (total_valid_windows * window_size_h * window_size_w * gs) if total_valid_windows > 0 else 0
     
     max_mem_mb = max_area / (1024 * 1024)
     max_area_agg_mb = max_area_agg / (1024 * 1024)
     max_area_agg2_mb = max_area_agg2 / (1024 * 1024)
 
     return {
-        'total_mem_mb': total_mem_mb,
+        'total_mem_mb_dual': total_mem_mb_dual,
+        'total_mem_mb_mode_0': total_mem_mb_mode_0,
+        'total_mem_mb_mode_1': total_mem_mb_mode_1,
         'avg_mem_kb': avg_mem_kb,
         'effective_pixel': effective_pixel,
         'max_mem_mb': max_mem_mb,
@@ -297,7 +309,9 @@ for window_size in window_sizes:
         result_entry = {
             'Window_Size': f"{window_size_h}x{window_size_w}",
             'GS': gs,
-            'Total_Mem_MB': result['total_mem_mb'],
+            'total_mem_mb_dual': result['total_mem_mb_dual'],
+            'total_mem_mb_mode_0': result['total_mem_mb_mode_0'],
+            'total_mem_mb_mode_1': result['total_mem_mb_mode_1'],
             'Avg_Mem_KB': result['avg_mem_kb'],
             'Effective_Pixel': result['effective_pixel'],
             'Max_Mem_MB': result['max_mem_mb'],
@@ -307,7 +321,7 @@ for window_size in window_sizes:
         }
         results.append(result_entry)
 
-        print(f"Total: {result['total_mem_mb']:.2f}MB, Avg: {result['avg_mem_kb']:.3f}KB, Eff: {result['effective_pixel']:.2f}, Max: {result['max_mem_mb']:.2f}MB, Max_Area_Agg: {result['max_area_agg_mb']:.2f}MB, Max_Area_Agg2: {result['max_area_agg2_mb']:.2f}MB")
+        print(f"{result['total_mem_mb_dual']:.2f}MB, {result['total_mem_mb_mode_0']:.2f}MB, {result['total_mem_mb_mode_1']:.2f}MB")
 
 print("\n" + "=" * 80)
 print("All experiments completed!")
@@ -335,4 +349,4 @@ for window_size in window_sizes:
     window_size_str = f"{window_size[0]}x{window_size[1]}"
     subset = df[df['Window_Size'] == window_size_str]
     print(f"\nWindow Size: {window_size_str}")
-    print(subset[['GS', 'Total_Mem_MB', 'Avg_Mem_KB', 'Effective_Pixel', 'Max_Mem_MB', 'Max_Area_Agg_MB', 'Max_Area_Agg2_MB']].to_string(index=False))
+    print(subset[['GS', 'total_mem_mb_dual', 'total_mem_mb_mode_0', 'total_mem_mb_mode_1']].to_string(index=False))

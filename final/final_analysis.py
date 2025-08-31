@@ -15,15 +15,27 @@
 import onnx
 from onnx import numpy_helper
 import argparse
-
+import matplotlib.pyplot as plt
 
     
 def train():
-    coarse_path = './onnx/ibrnet_generalizable_16_simp_s8.onnx'
-    fine_path = './onnx/ibrnet_generalizable_48_simp_s8.onnx'
-    sr_path = './onnx/osr_simp.onnx'
+    coarse_path = '../onnx/ibrnet_generalizable_16_simp_s8.onnx'
+    fine_path = '../onnx/ibrnet_generalizable_48_simp_s8.onnx'
+    sr_path = '../onnx/osr_simp.onnx'
     
     optimizations = {}
+    
+    coarse_ema_base, fine_ema_base = 28836, 29053
+    coarse_ema_base, fine_ema_base = 14057, 9556
+    coarse_ema_s1, fine_ema_s1 = 200, 376
+    coarse_ema_s1, fine_ema_s1 = 100, 180
+    
+    # 4490 9537 7884
+    coarse_d2d_s1, fine_d2d_s1 = 1500.193149, 1828.555128
+    coarse_d2d_s1, fine_d2d_s1 = 2013, 2803
+    
+    # coarse: 2013.946704         14029.609156          2611.808777
+    # fine: 2803.409135          9537.462963            7884.7332
     hardware_configurations = {
         'Mode': 1, # 0: efficiency; 1: performance
         'MACs': 2048,
@@ -33,7 +45,7 @@ def train():
         'Activation Buffer Bandwidth': 2048 / 8,
         'Weight Buffer Bandwidth': 1024 / 8,
         'Chiplets': 4,
-        'DRAM Bandwidth': 25.6 * 1000 ** 3,
+        'DRAM Bandwidth': 25.6 * 1000 ** 3 * 4,
         # 'DRAM Energy': 112.54 * 1e-12,
         'DRAM Energy': 60.4 * 1e-12,
         'UCIE Bandwidth': 64 * 1000 ** 3,
@@ -111,8 +123,8 @@ def train():
     results['Baseline']['Chip Latency'] = nerf_total_mac_latency
     results['Baseline']['Chip Energy'] = nerf_total_energy
     
-    baseline_dram_access_sv_coarse = 6027.055623 * (1024 ** 2) # assume 5x5 tile, no unified cache
-    baseline_dram_access_sv_fine = 6014.637089 * (1024 ** 2) # assume 5x5 tile, no unified cache
+    baseline_dram_access_sv_coarse = coarse_ema_base * (1024 ** 2) # assume 5x5 tile, no unified cache
+    baseline_dram_access_sv_fine = fine_ema_base * (1024 ** 2) # assume 5x5 tile, no unified cache
     baseline_dram_access_weight = (0.04 + 0.75) * (1024 ** 2) * hardware_configurations['Chiplets']
     baseline_dram_access = baseline_dram_access_weight + baseline_dram_access_sv_coarse + baseline_dram_access_sv_fine
     baseline_dram_energy = baseline_dram_access * hardware_configurations['DRAM Energy']
@@ -120,15 +132,29 @@ def train():
     results['Baseline']['Off-Chip Latency'] = baseline_dram_latency
     results['Baseline']['Off-Chip Energy'] = baseline_dram_energy
     print(f"EMA Energy: {baseline_dram_energy:.3f}J, EMA Latency: {baseline_dram_latency:.3f}s")
+    results['Baseline']['Total Energy'] = results['Baseline']['Chip Energy'] + results['Baseline']['Off-Chip Energy']
+    results['Baseline']['Pixel Energy'] = results['Baseline']['Total Energy'] / (H * W)
+    print(f"Per Pixel Energy: {results['Baseline']['Pixel Energy']*1e6:.3f}μJ/pixel")
     
+    # optimizations = {
+    #     'Channel Pruning': nerf_sparsity, # TODO
+    # }
+    H, W = nerf_config['H'], nerf_config['W']
+    graph_coarse = onnx.shape_inference.infer_shapes(onnx.load(coarse_path)).graph
+    coarse_mac_ops, coarse_mac_latency, coarse_sram_access, coarse_sram_latency = calculate_flops_and_latency(graph_coarse, hardware_configurations, optimizations, G=True, debug=False)
+
+    graph_fine = onnx.shape_inference.infer_shapes(onnx.load(fine_path)).graph
+    fine_mac_ops, fine_mac_latency, fine_sram_access, fine_sram_latency = calculate_flops_and_latency(graph_fine, hardware_configurations, optimizations, G=True, debug=False)
+    # print(f"Ray: Fine Network Latency: {fine_sram_latency * 1e6:.3f}us")
+    nerf_total_mac_latency = (coarse_mac_latency + fine_mac_latency) * H * W
     
-    # ----------------------------------- Solution 1a -----------------------------------
+    results['Baseline']['FPS'] = 1 / (baseline_dram_latency + nerf_total_mac_latency)
+    
+    # ----------------------------------- Solution 1 -----------------------------------
     # rgb复用？
     print(f"------------- Solution 1 -------------")
-    # solution1_dram_access_sv_coarse = 201.476916 * (1024 ** 2) # assume 5x5 tile, no unified cache
-    # solution1_dram_access_sv_fine = 362.878799 * (1024 ** 2) # assume 5x5 tile, no unified cache
-    solution1_dram_access_sv_coarse = 108.818 * (1024 ** 2) # assume 5x5 tile, no unified cache
-    solution1_dram_access_sv_fine = 108.818 * (1024 ** 2) # assume 5x5 tile, no unified cache
+    solution1_dram_access_sv_coarse = coarse_ema_s1 * (1024 ** 2) # assume 5x5 tile, no unified cache
+    solution1_dram_access_sv_fine = fine_ema_s1 * (1024 ** 2) # assume 5x5 tile, no unified cache
     solution1_dram_access_weight = (0.04 + 0.75) * (1024 ** 2) * hardware_configurations['Chiplets']
     solution1_dram_access = solution1_dram_access_weight + solution1_dram_access_sv_coarse + solution1_dram_access_sv_fine
     solution1_dram_energy = solution1_dram_access * hardware_configurations['DRAM Energy']
@@ -137,14 +163,30 @@ def train():
     results['Solution 1']['Off-Chip Energy'] = solution1_dram_energy
     print(f"EMA Energy: {solution1_dram_energy:.3f}J, EMA Latency: {solution1_dram_latency:.3f}s")
     
-    solution1_d2d_access_sv_coarse = 1500.193149 * (1024 ** 2) # assume 5x5 tile, no unified cache
-    solution1_d2d_access_sv_fine = 1828.555128 * (1024 ** 2) # assume 5x5 tile, no unified cache
+    solution1_d2d_access_sv_coarse = coarse_d2d_s1 * (1024 ** 2) # assume 5x5 tile, no unified cache
+    solution1_d2d_access_sv_fine = fine_d2d_s1 * (1024 ** 2) # assume 5x5 tile, no unified cache
     solution1_d2d_access = solution1_d2d_access_sv_coarse + solution1_d2d_access_sv_fine
     solution1_d2d_energy = solution1_d2d_access * hardware_configurations['UCIE Energy'] # do we have sram energy to cal?
     solution1_d2d_latency = solution1_d2d_access / (hardware_configurations['Chiplets'] * hardware_configurations['UCIE Bandwidth'])
     results['Solution 1']['Inter-Chip Latency'] = solution1_d2d_latency
     results['Solution 1']['Inter-Chip Energy'] = solution1_d2d_energy
     print(f"D2D Energy: {solution1_d2d_energy:.3f}J, D2D Latency: {solution1_d2d_latency:.3f}s")
+    results['Solution 1']['Total Energy'] = results['Baseline']['Chip Energy'] + results['Solution 1']['Off-Chip Energy'] + results['Solution 1']['Inter-Chip Energy']
+    results['Solution 1']['Pixel Energy'] = results['Solution 1']['Total Energy'] / (H * W)
+    print(f"Per Pixel Energy: {results['Solution 1']['Pixel Energy']*1e6:.3f}μJ/pixel")
+    
+    optimizations = {
+        'Channel Pruning': nerf_sparsity, # TODO
+    }
+    H, W = nerf_config['H'], nerf_config['W']
+    graph_coarse = onnx.shape_inference.infer_shapes(onnx.load(coarse_path)).graph
+    coarse_mac_ops, coarse_mac_latency, coarse_sram_access, coarse_sram_latency = calculate_flops_and_latency(graph_coarse, hardware_configurations, optimizations, G=True, debug=False)
+
+    graph_fine = onnx.shape_inference.infer_shapes(onnx.load(fine_path)).graph
+    fine_mac_ops, fine_mac_latency, fine_sram_access, fine_sram_latency = calculate_flops_and_latency(graph_fine, hardware_configurations, optimizations, G=True, debug=False)
+    # print(f"Ray: Fine Network Latency: {fine_sram_latency * 1e6:.3f}us")
+    nerf_total_mac_latency = (coarse_mac_latency + fine_mac_latency) * H * W
+    results['Solution 1']['FPS'] = 1 / nerf_total_mac_latency # TODO
     
     # ----------------------------------- Solution 2a -----------------------------------
     print(f"------------- Solution 2a -------------")
@@ -172,9 +214,14 @@ def train():
     print(f"Total OPs: {nerf_total_mac_ops/1e12:.3f}T")
     print(f"NeRF Latency: {nerf_total_mac_latency:.3f}s")
     print(f"NeRF Energy: {nerf_total_energy:.3f}J")
-    results['Solution 2a']['ALL']['OPs'] = nerf_total_mac_ops
-    results['Solution 2a']['ALL']['Chip Latency'] = nerf_total_mac_latency
-    results['Solution 2a']['ALL']['Chip Energy'] = nerf_total_energy
+    results['Solution 2a']['OPs'] = nerf_total_mac_ops
+    results['Solution 2a']['Chip Latency'] = nerf_total_mac_latency
+    results['Solution 2a']['Chip Energy'] = nerf_total_energy
+    
+    results['Solution 2a']['Total Energy'] = results['Solution 2a']['Chip Energy'] + results['Solution 1']['Off-Chip Energy'] + results['Solution 1']['Inter-Chip Energy']
+    results['Solution 2a']['Pixel Energy'] = results['Solution 2a']['Total Energy'] / (H * W)
+    print(f"Per Pixel Energy: {results['Solution 2a']['Pixel Energy']*1e6:.3f}μJ/pixel")
+    results['Solution 2a']['FPS'] = 1 / nerf_total_mac_latency # TODO
     
     # ----------------------------------- Solution 2b -----------------------------------
     print(f"------------- Solution 2b -------------")
@@ -229,9 +276,12 @@ def train():
     print(f"Total OPs: {total_mac_ops/1e12:.3f}T, NeRF OPs: {nerf_total_mac_ops/1e12:.3f}T, sr OPs: {sr_total_mac_ops/1e12:.3f}T")
     print(f"Total Latency: {total_mac_latency:.3f}s, NeRF Latency: {nerf_total_mac_latency:.3f}s, SR Latency: {sr_total_mac_latency:.3f}s")
     print(f"Total Energy: {total_energy:.3f}J, NeRF Energy: {nerf_total_energy:.3f}J, SR Energy: {sr_total_energy:.3f}J")
-    results['Solution 2b']['Select SR']['OPs'] = total_mac_ops
-    results['Solution 2b']['Select SR']['Chip Latency'] = total_mac_latency
-    results['Solution 2b']['Select SR']['Chip Energy'] = total_energy
+    results['Solution 2b']['OPs'] = total_mac_ops
+    results['Solution 2b']['Chip Latency'] = total_mac_latency
+    results['Solution 2b']['Chip Energy'] = total_energy
+    
+    results['Solution 2b']['FPS'] = 1 / total_mac_latency # TODO
+    
     
     # ----------------------------------- ALL -----------------------------------
     print(f"------------- ALL -------------")
@@ -342,11 +392,20 @@ def train():
     org_mac_ops = results['Baseline']['OPs']
     print(f"TOPS/W: {org_mac_ops*1e-12/total_energy:.3f}")
     total_energy = results['ALL']['Chip Energy'] # + results['ALL']['Inter-Chip Energy'] 算过了
-    print(f"Final FPS per Frame: {1/total_mac_latency:.2f}")
-    print(f"Final Energy per Frame: {total_energy*1e3:.2f}mJ")
-    print(f"Final Energy per Pixel: {total_energy*1e6/(H*W):.2f}μJ")
+    results['Baseline']['Off-Chip Latency'] = baseline_dram_latency
+    results['ALL']['Latency'] = results['ALL']['Chip Latency'] + results['ALL']['Off-Chip Latency'] * 0.5 # TODO
+    results['ALL']['FPS'] = 1 / results['ALL']['Latency'] # TODO
+    print(f"Final On-Chip Latency: {results['ALL']['Chip Latency']:.4f}s, Final Off-Chip Latency: {results['ALL']['Off-Chip Latency']:.4f}s")
+    print(f"Final FPS per Frame: {results['ALL']['FPS']:.2f}")
+    print(f"Final Energy per Frame: {(total_energy+solution1_dram_energy)*1e3:.2f}mJ")
+    print(f"Final Energy per Pixel: {(total_energy+solution1_dram_energy)*1e6/(H*W):.2f}μJ")
     print(f"TOPS/W Theoretical Scaling Number: {org_mac_ops/total_mac_ops:.2f}x")
     print(f"TOPS/W with Interpolation: {org_mac_ops*1e-12/total_energy:.3f}")
+    results['ALL']['Pixel Energy'] = (total_energy+solution1_dram_energy)/(H*W)
+    
+    create_pixel_energy_chart(results)
+    # create_efficiency_chart(results)
+    create_fps_chart(results)
     
 # 定义卷积层 FLOPs 计算
 def calculate_conv_flops(output_shape, weight_shape):
@@ -576,7 +635,308 @@ def calculate_flops_and_latency(graph, hardware_configurations, optimizations, G
 
     return total_mac_ops, total_mac_latency, total_sram_access, total_sram_latency
 
+def create_pixel_energy_chart(results):
+    """
+    创建PSNR准确率对比图表
+    """
+    # 数据
+    
+    baseline = results['Baseline']['Pixel Energy'] * 1e6
+    solution_1 = results['Solution 1']['Pixel Energy'] * 1e6
+    solution_2a = results['Solution 2a']['Pixel Energy'] * 1e6
+    solution_2b = results['ALL']['Pixel Energy'] * 1e6
+    categories = ['Baseline', '+1', '+2a', '+2b']
+    values = [baseline, solution_1, solution_2a, solution_2b]  # PSNR值
+    colors = ['#B0B0B0', '#909090', '#707070', '#505050']  # 渐变灰色
+    
+    # 创建图表
+    fig, ax = plt.subplots(figsize=(10, 10))
+    
+    # 创建柱状图
+    bars = ax.bar(categories, values, color=colors, edgecolor='black', linewidth=1., width=0.6)
+    
+    # 设置坐标轴范围
+    # ax.set_ylim(23, 24)
+    # ax.set_xlim(-0.5, len(categories) - 0.5)
+    # ax.set_yticks([23, 24])
+    
+    
+    # 添加横向网格线
+    ax.grid(True, axis='y', alpha=0.7, linestyle='-', linewidth=0.5, color='gray')
+    ax.set_axisbelow(True)
+    
+    # 添加虚线和箭头标注
+    baseline_bar = bars[0]  # Baseline作为参考
+    baseline_value = values[0]
+    
+    # 计算虚线的位置和终点
+    baseline_right_x = baseline_bar.get_x() + baseline_bar.get_width()
+    line_end_x = bars[3].get_x() + bars[3].get_width()  # 延伸到最后一个柱子
+    line_y = baseline_value * 0.999 # 虚线的高度设置在baseline的高度
+    
+    # 绘制一根水平虚线 - 从baseline右边延展到最后一个柱子右端
+    ax.plot([baseline_right_x, line_end_x], [line_y, line_y], 
+            linestyle='--', color='black', linewidth=2., alpha=0.8)
+    
+    # 在柱子内部添加数值标签
+    for i, (bar, value) in enumerate(zip(bars, values)):
+        height = bar.get_height()
+        # 在柱子顶端添加文字
+        ax.text(bar.get_x() + bar.get_width()/2., height / 2 - 0.08,
+                f'{value:.2f}', ha='center', va='bottom', 
+                fontsize=22, fontweight='bold', color='white')
+        
+    # 为第二和第三个柱子添加箭头和差值
+    for i in range(1, len(values)):
+        proposed_bar = bars[i]
+        # 计算与baseline的差值
+        # difference = values[i] - baseline_value
+        difference = baseline_value / values[i]
+        
+        # 计算箭头位置
+        proposed_center_x = proposed_bar.get_x() + proposed_bar.get_width()/2
+        
+        # 调整箭头起点和终点
+        arrow_start_y = line_y
+        arrow_end_y = values[i] - 0.02
+        
+        # 下降箭头
+        ax.annotate('', xy=(proposed_center_x, arrow_end_y), xytext=(proposed_center_x, arrow_start_y),
+                    arrowprops=dict(arrowstyle='->', color='black', lw=2.5, mutation_scale=25))
+        
+        # 添加差值文字
+        text_x = proposed_center_x + 0.025
+        text_y = (arrow_start_y + arrow_end_y) / 2
+        ax.text(text_x, text_y, f'{difference:.2f}x', 
+                ha='left', va='center', fontsize=20, fontweight='bold', color='black')
+    
+    # 设置坐标轴样式 - 保留所有边框
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_linewidth(1)
+    
+    # 设置刻度样式
+    ax.tick_params(axis='y', which='major', labelsize=18, labelcolor='black')
+    ax.tick_params(axis='x', which='major', labelsize=24, labelcolor='black')
+    
+    # 添加Y轴标签
+    ax.set_ylabel('Rendering Energy [μJ/Pixel]', fontsize=24, fontweight='bold')
+    
+    # 添加标题
+    # ax.set_title('PSNR Comparison', fontsize=16, fontweight='bold', pad=20)
+    plt.subplots_adjust(left=0.1, right=1.1)
+    # 调整布局
+    # plt.tight_layout()
+    
+    # 保存图片
+    output_path = './final_pixel_energy.png'
+    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
+    print(f"PSNR对比图表已保存到: {output_path}")
+    
+    # 不显示图表，直接关闭
+    plt.close()
 
+def create_fps_chart(results):
+    """
+    创建PSNR准确率对比图表
+    """
+    # 数据
+    
+    baseline = results['Baseline']['FPS']
+    solution_1 = results['Solution 1']['FPS']
+    solution_2a = results['Solution 2a']['FPS']
+    solution_2b = results['ALL']['FPS']
+    categories = ['Baseline', '+1', '+2a', '+2b']
+    values = [baseline, solution_1, solution_2a, solution_2b]  # PSNR值
+    colors = ['#B0B0B0', '#909090', '#707070', '#505050']  # 渐变灰色
+    
+    # 创建图表
+    fig, ax = plt.subplots(figsize=(10, 10))
+    
+    # 创建柱状图
+    bars = ax.bar(categories, values, color=colors, edgecolor='black', linewidth=1., width=0.6)
+    
+    # 设置坐标轴范围
+    # ax.set_ylim(23, 24)
+    # ax.set_xlim(-0.5, len(categories) - 0.5)
+    # ax.set_yticks([23, 24])
+    
+    
+    # 添加横向网格线
+    ax.grid(True, axis='y', alpha=0.7, linestyle='-', linewidth=0.5, color='gray')
+    ax.set_axisbelow(True)
+    
+    # 添加虚线和箭头标注
+    baseline_bar = bars[0]  # Baseline作为参考
+    baseline_value = values[3]
+    
+    # 计算虚线的位置和终点
+    baseline_left_x = baseline_bar.get_x() #- baseline_bar.get_width()
+    line_end_x = bars[3].get_x() # + bars[3].get_width()  # 延伸到最后一个柱子
+    line_y = baseline_value * 0.999 # 虚线的高度设置在baseline的高度
+    
+    # 绘制一根水平虚线 - 从baseline右边延展到最后一个柱子右端
+    ax.plot([baseline_left_x, line_end_x], [line_y, line_y], 
+            linestyle='--', color='black', linewidth=2., alpha=0.8)
+    
+    # 在柱子内部添加数值标签
+    for i, (bar, value) in enumerate(zip(bars, values)):
+        height = bar.get_height()
+        # 在柱子顶端添加文字
+        ax.text(bar.get_x() + bar.get_width()/2., height / 2 - 1.,
+                f'{value:.2f}', ha='center', va='bottom', 
+                fontsize=22, fontweight='bold', color='white')
+        
+    # 为第二和第三个柱子添加箭头和差值
+    for i in range(1, len(values)):
+        if i < 3: continue
+        proposed_bar = bars[i]
+        # 计算与baseline的差值
+        # difference = values[i] - baseline_value
+        difference = values[3] / values[0]
+        
+        # 计算箭头位置
+        proposed_center_x = bars[0].get_x() + proposed_bar.get_width()/2
+        
+        # 调整箭头起点和终点
+        arrow_start_y = values[0]
+        arrow_end_y = line_y
+        
+        ax.annotate('', xy=(proposed_center_x, arrow_start_y), xytext=(proposed_center_x, arrow_end_y),
+                    arrowprops=dict(arrowstyle='<-', color='black', lw=2.5, mutation_scale=25))
+        
+        # 添加差值文字
+        text_x = proposed_center_x + 0.025
+        text_y = (arrow_start_y + arrow_end_y) / 2
+        ax.text(text_x, text_y, f'{difference:.2f}x', 
+                ha='left', va='center', fontsize=20, fontweight='bold', color='black')
+    
+    # 设置坐标轴样式 - 保留所有边框
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_linewidth(1)
+    
+    # 设置刻度样式
+    ax.tick_params(axis='y', which='major', labelsize=18, labelcolor='black')
+    ax.tick_params(axis='x', which='major', labelsize=24, labelcolor='black')
+    
+    # 添加Y轴标签
+    ax.set_ylabel('Rendering Throughput [FPS]', fontsize=24, fontweight='bold')
+    
+    # 添加标题
+    # ax.set_title('PSNR Comparison', fontsize=16, fontweight='bold', pad=20)
+    plt.subplots_adjust(left=0.1, right=1.1)
+    # 调整布局
+    # plt.tight_layout()
+    
+    # 保存图片
+    output_path = './final_fps.png'
+    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
+    print(f"PSNR对比图表已保存到: {output_path}")
+    
+    # 不显示图表，直接关闭
+    plt.close()
+
+def create_efficiency_chart(results):
+    """
+    创建PSNR准确率对比图表
+    """
+    # 数据
+    
+    baseline = results['Baseline']['Efficiency']
+    solution_2a = results['Solution 2a']['Efficiency']
+    solution_2b = results['ALL']['Efficiency']
+    categories = ['Baseline', '+2a', '+2b']
+    values = [baseline, solution_2a, solution_2b]  # PSNR值
+    colors = ['#B0B0B0', '#909090', '#707070']  # 渐变灰色
+    
+    # 创建图表
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # 创建柱状图
+    bars = ax.bar(categories, values, color=colors, edgecolor='black', linewidth=1., width=0.6)
+    
+    # 设置坐标轴范围
+    # ax.set_ylim(23, 24)
+    # ax.set_xlim(-0.5, len(categories) - 0.5)
+    # ax.set_yticks([23, 24])
+    
+    
+    # 添加横向网格线
+    ax.grid(True, axis='y', alpha=0.7, linestyle='-', linewidth=0.5, color='gray')
+    ax.set_axisbelow(True)
+    
+    # 添加虚线和箭头标注
+    baseline_bar = bars[0]  # Baseline作为参考
+    baseline_value = values[0]
+    
+    # 计算虚线的位置和终点
+    baseline_right_x = baseline_bar.get_x() + baseline_bar.get_width()
+    line_end_x = bars[3].get_x() + bars[3].get_width()  # 延伸到最后一个柱子
+    line_y = baseline_value * 0.999 # 虚线的高度设置在baseline的高度
+    
+    # 绘制一根水平虚线 - 从baseline右边延展到最后一个柱子右端
+    ax.plot([baseline_right_x, line_end_x], [line_y, line_y], 
+            linestyle='--', color='black', linewidth=2., alpha=0.8)
+    
+    # 在柱子内部添加数值标签
+    for i, (bar, value) in enumerate(zip(bars, values)):
+        height = bar.get_height()
+        # 在柱子顶端添加文字
+        ax.text(bar.get_x() + bar.get_width()/2., height / 2 - 0.08,
+                f'{value:.2f}', ha='center', va='bottom', 
+                fontsize=22, fontweight='bold', color='white')
+        
+    # 为第二和第三个柱子添加箭头和差值
+    for i in range(1, len(values)):
+        proposed_bar = bars[i]
+        # 计算与baseline的差值
+        # difference = values[i] - baseline_value
+        difference = baseline_value / values[i]
+        
+        # 计算箭头位置
+        proposed_center_x = proposed_bar.get_x() + proposed_bar.get_width()/2
+        
+        # 调整箭头起点和终点
+        arrow_start_y = line_y
+        arrow_end_y = values[i] - 0.02
+        
+        # 下降箭头
+        ax.annotate('', xy=(proposed_center_x, arrow_end_y), xytext=(proposed_center_x, arrow_start_y),
+                    arrowprops=dict(arrowstyle='->', color='black', lw=2.5, mutation_scale=25))
+        
+        # 添加差值文字
+        text_x = proposed_center_x + 0.025
+        text_y = (arrow_start_y + arrow_end_y) / 2
+        ax.text(text_x, text_y, f'{difference:.2f}x', 
+                ha='left', va='center', fontsize=20, fontweight='bold', color='black')
+    
+    # 设置坐标轴样式 - 保留所有边框
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_linewidth(1)
+    
+    # 设置刻度样式
+    ax.tick_params(axis='y', which='major', labelsize=18, labelcolor='black')
+    ax.tick_params(axis='x', which='major', labelsize=24, labelcolor='black')
+    
+    # 添加Y轴标签
+    ax.set_ylabel('Rendering Energy [μJ/Pixel]', fontsize=24, fontweight='bold')
+    
+    # 添加标题
+    # ax.set_title('PSNR Comparison', fontsize=16, fontweight='bold', pad=20)
+    plt.subplots_adjust(left=0.1, right=1.1)
+    # 调整布局
+    # plt.tight_layout()
+    
+    # 保存图片
+    output_path = './final_efficiency.png'
+    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
+    print(f"PSNR对比图表已保存到: {output_path}")
+    
+    # 不显示图表，直接关闭
+    plt.close()
+    
 if __name__ == '__main__':
 
     train()

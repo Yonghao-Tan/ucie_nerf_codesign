@@ -21,3 +21,13 @@ tensor = np.array([0.01, 0.01, 0.00, 0.00, 0.16, 0.70, 0.07, 0.05])
 print(np.sum(tensor))
 variance = np.var(tensor)
 print("Variance:", variance)
+
+
+tensor = np.array([0.001, 0.35, 0.01, 0.25, 0.17, 0.03, 0.186, 0.003])
+print(np.sum(tensor))
+variance = np.var(tensor)
+print("Variance:", variance)
+tensor = np.array([0.16, 0.20, 0.02, 0.18, 0.15, 0.21, 0.05, 0.03])
+print(np.sum(tensor))
+variance = np.var(tensor)
+print("Variance:", variance)

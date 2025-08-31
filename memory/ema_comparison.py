@@ -1,65 +1,16 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-def compute(sel_sr_rate=0., eff_waste=0.):
-    patch_size = 100
-    H, W = 800, 800
-    
-    coarse_mac_ops, fine_mac_ops = 2.64 * 1e6, 7.94 * 1e6
-    sr_mac_ops = 1e12*0.0003827*10*10/(16*16)
-    sel_sr_rate = 0.9
-    total_pixels = H * W
-    total_patches_base = total_pixels / (2 * 2 * patch_size)
-    
-    sr_patches = total_patches_base * sel_sr_rate
-    sr_total_mac_ops = sr_patches * sr_mac_ops * (1+eff_waste)
-
-    total_patches_hr = total_patches_base * (1 - sel_sr_rate) * 2 * 2
-    total_patches_lr = total_patches_base * sel_sr_rate
-    total_patches_nerf = total_patches_hr + total_patches_lr
-    
-    nerf_patch_mac_ops = (coarse_mac_ops + fine_mac_ops) * patch_size
-    
-    nerf_total_mac_ops = total_patches_nerf * nerf_patch_mac_ops
-    
-    total_mac_ops = nerf_total_mac_ops + sr_total_mac_ops
-    return total_mac_ops
-
-def create_sr_latency_chart():
+def create_d2d_transfer_chart():
     """
     创建D2D传输总量对比图表
     """
     # 数据
-    categories = ['Baseline', '+PDU', '+Flow']
+    categories = ['Baseline', '+Grouping', '+PAU']
     # 计算总和值
-    # a = 1 * (85 + 15)
-    # b = 1 * 85/4 + 0.22/0.52 * 85/4 * 1.5 + 1 * 15 * 4/4
-    # c = 1 * 85/4 + 0.22/0.52 * 85/4 * 1.5 + 1 * 15 * 3/4
-    # d = 1 * 85/4 + 0.22/0.52 * 85/4 * 1.0 + 1 * 15 * 3/4
-    # total_patches = 100
-    # sr_ratio = 0.9
-    # sr_patches = total_patches * sr_ratio
-    # normal_patches = total_patches - sr_patches
-    # whole_patch_nerf_op = 1e6*20*20*2*(7.94 + 2.64)
-    # whole_patch_nerf_op = 1e6*20*20*2*(7.94*5/8 + 2.64/25)*0.4
-    # patch_sr_op = 1e12*0.0003827*10*10/(16*16)
-    # eff_waste = 3.
-    # a = total_patches * whole_patch_nerf_op
-    # b = sr_patches * (1/4*whole_patch_nerf_op+patch_sr_op*(1+eff_waste)) + normal_patches * whole_patch_nerf_op * 4/4
-    # c = sr_patches * (1/4*whole_patch_nerf_op+patch_sr_op*(1+eff_waste)) + normal_patches * whole_patch_nerf_op * 3/4
-    # d = sr_patches * (1/4*whole_patch_nerf_op+patch_sr_op) + normal_patches * whole_patch_nerf_op * 3/4
-    # print(whole_patch_nerf_op, patch_sr_op, patch_sr_op/(whole_patch_nerf_op/4))
-    # a, b, c, d = a/a, b/a, c/a, d/a
-    # print(a, b, c ,d)
-    
-    
-    a = compute()
-    b = compute(sel_sr_rate=0.9, eff_waste=2.5)
-    c = compute(sel_sr_rate=0.9, eff_waste=0.)
-    a, b, c = a/a, b/a, c/a
-    
-    # 将数据转换为百分比（以baseline为100%）
-    values = [a*100, c*100, c*100]
+    values = [14057+9556, 1248+1147, 200+376]  # GB
+    values = [v / 1000 for v in values]
+    # values = [16.47, 8.01, 2.52]  # 四舍五入后的值
     colors = ['#A0A0A0', '#707070', '#505050']  # 渐变灰色
     
     # 创建图表
@@ -133,17 +84,17 @@ def create_sr_latency_chart():
     ax.tick_params(axis='x', which='major', labelsize=26, labelcolor='black')
     
     # 添加Y轴标签
-    ax.set_ylabel('Normalized Latency', fontsize=26, fontweight='bold')
+    ax.set_ylabel('EMA (GB)', fontsize=26, fontweight='bold')
     
     # 添加标题
-    ax.set_title('Latency Comparison', fontsize=26, fontweight='bold', pad=20)
+    ax.set_title('EMA Comparison', fontsize=26, fontweight='bold', pad=20)
     
     # 调整布局
     plt.tight_layout()
     
     # 保存图片
-    output_path = './sr_latency.png'
-    plt.savefig(output_path, dpi=400, bbox_inches='tight', facecolor='white')
+    output_path = '/home/ytanaz/access/IBRNet/memory/statistic_plots/ema_comparison.png'
+    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
     print(f"D2D传输量对比图表已保存到: {output_path}")
     
     # 不显示图表，直接关闭
@@ -151,5 +102,5 @@ def create_sr_latency_chart():
 
 if __name__ == "__main__":
     # 创建D2D传输量对比图表
-    create_sr_latency_chart()
+    create_d2d_transfer_chart()
     print("D2D传输量对比图表创建完成！")

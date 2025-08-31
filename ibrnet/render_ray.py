@@ -307,8 +307,6 @@ def render_rays(ray_batch,
         H = z_vals.shape[0] // W
         window_size = model.window_size
         if model.sample_point_sparsity: 
-            # TODO
-            # if window_size > 6: window_size = window_size // 2
             H_exclude, W_exclude = H % window_size, W % window_size
             z_vals_2d = z_vals.reshape(H, W, -1)
             if H_exclude > 0 and W_exclude > 0:

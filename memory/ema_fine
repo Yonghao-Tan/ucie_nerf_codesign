@@ -1,0 +1,35 @@
+Window Size: 5x5
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8   9556.537889    8.285365        42.421071 tensor(0.4180)  tensor(0.2319)   tensor(0.2078)
+ 16  16881.962498   28.718929        73.520458 tensor(0.6776)  tensor(0.4713)   tensor(0.4607)
+ 48  29053.799786  145.526940       124.182989 tensor(0.8552)  tensor(0.6359)   tensor(0.6359)
+
+Window Size: 20x20
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8   1147.197005   15.726388         5.032444 tensor(0.8581)  tensor(0.4799)   tensor(0.4767)
+ 16   1530.282013   41.268568         6.602971 tensor(0.9552)  tensor(0.5564)   tensor(0.5165)
+ 48   2187.214184  175.086564         9.337950 tensor(0.9546)  tensor(0.7020)   tensor(0.7020)
+
+Window Size: 40x40
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8    544.660827   29.565982         2.365279 tensor(1.1184)  tensor(0.6669)   tensor(0.6534)
+ 16    573.092065   61.449872         2.457995 tensor(1.0828)  tensor(0.7499)   tensor(0.6398)
+ 48    674.223674  215.751576         2.876688 tensor(1.0901)  tensor(0.7917)   tensor(0.7917)
+
+Window Size: 80x80
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8    328.875779   70.734887         1.414698 tensor(1.8204)  tensor(1.2759)   tensor(1.2702)
+ 16    268.336002  114.537752         1.145378 tensor(1.5927)  tensor(1.1436)   tensor(1.0307)
+ 48    238.744849  305.593406         1.018645 tensor(1.4032)  tensor(0.9943)   tensor(0.9943)
+
+Window Size: 120x120
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8    273.497082  119.837831         1.065225 tensor(3.0852)  tensor(2.2733)   tensor(2.2645)
+ 16    197.563856  172.174798         0.765221 tensor(2.3368)  tensor(1.7480)   tensor(1.5918)
+ 48    146.132189  381.733066         0.565530 tensor(1.7227)  tensor(1.2385)   tensor(1.2385)
+
+Window Size: 160x160
+ GS  Total_Mem_MB  Avg_Mem_KB  Effective_Pixel     Max_Mem_MB Max_Area_Agg_MB Max_Area_Agg2_MB
+  8    240.706244  205.402661         1.027013 tensor(4.3375)  tensor(3.2860)   tensor(3.2729)
+ 16    158.893585  271.178385         0.677946 tensor(3.1850)  tensor(2.4356)   tensor(2.2442)
+ 48    101.127145  517.770981         0.431476 tensor(2.1439)  tensor(1.5024)   tensor(1.5024

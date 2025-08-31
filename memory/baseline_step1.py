@@ -13,10 +13,14 @@ W_t = 1008   # 图像宽度
 H_s = 756
 W_s = 1008
 
+H_t = 800  # 图像高度
+W_t = 800   # 图像宽度
+H_s = 800
+W_s = 800
 # 实验参数
-window_sizes = [[5, 5], [10, 10], [20, 20], [40, 40], [80, 80], [160, 160], [320, 320], [2000, 2000]]
+window_sizes = [[40, 40], [80, 80]]
 gs_values = [8, 16, 48]
-window_sizes = [[80, 80]]
+window_sizes = [[5, 5], [20, 20], [40, 40], [80, 80], [120, 120], [160, 160]]
 gs_values = [8, 16, 48]
 
 
@@ -34,7 +38,7 @@ if GENERATE_PLOTS:
     print(f"Created output directory: {output_dir}")
 
 # 加载张量
-pixel_locations = torch.load("./locations_hr/pixel_locations_0_n48.pt")
+pixel_locations = torch.load("./nerf_synthetic/locations_hr/pixel_locations_0_n48.pt")
 print("Loaded tensor shape:", pixel_locations.shape)
 
 # Reshape 并提取切片
@@ -236,11 +240,11 @@ def run_single_experiment(window_size_h, window_size_w, gs):
             tmp_area_agg = area_agg(patch.flatten())
             patch = patch.sum(dim=-2) # 8
             # unified but not agg
-            # patch = patch.reshape(-1, 2)
-            # patch_area = patch.sum(dim=-1)
-            # tmp_area = patch_area.max()
+            patch = patch.reshape(-1, 2)
+            patch_area = patch.sum(dim=-1)
+            tmp_area = patch_area.max()
             # not unified, not agg
-            tmp_area = patch.sum()
+            # tmp_area = patch.sum()
             if tmp_area > max_area:
                 max_area = tmp_area
             if tmp_area_agg > max_area_agg:

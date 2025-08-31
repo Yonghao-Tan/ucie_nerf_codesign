@@ -6,8 +6,8 @@ def create_accuracy_chart():
     创建PSNR准确率对比图表
     """
     # 数据
-    categories = ['Baseline', '+CSU', '+CSU+50% SV Prune', '+CSU+DPU(48%)']
-    values = [25.06, 25.05, 24.77, 24.96]  # PSNR值
+    categories = ['Baseline', '+RSU', '+DPS', '+FSU']
+    values = [23.36, 23.35, 23.26, 23.18]  # PSNR值
     colors = ['#B0B0B0', '#909090', '#707070', '#505050']  # 渐变灰色
     
     # 创建图表
@@ -17,9 +17,9 @@ def create_accuracy_chart():
     bars = ax.bar(categories, values, color=colors, edgecolor='black', linewidth=0.8, width=0.6)
     
     # 设置坐标轴范围
-    ax.set_ylim(24.25, 25.25)
+    ax.set_ylim(23, 24)
     ax.set_xlim(-0.5, len(categories) - 0.5)
-    ax.set_yticks([24.5, 25])
+    ax.set_yticks([23, 24])
     
     # 在柱子内部添加数值标签
     for i, (bar, value) in enumerate(zip(bars, values)):

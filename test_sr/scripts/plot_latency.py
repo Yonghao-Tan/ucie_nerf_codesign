@@ -6,7 +6,8 @@ def compute(sel_sr_rate=0., eff_waste=0.):
     H, W = 800, 800
     
     coarse_mac_ops, fine_mac_ops = 2.64 * 1e6, 7.94 * 1e6
-    sr_mac_ops = 1e12*0.0003827*10*10/(16*16)
+    sr_mac_ops = 1e12*0.000181998592*10*10/(16*16)
+    # sr_mac_ops = 1e12*0.000371998592*10*10/(16*16)
     
     total_pixels = H * W
     total_patches_base = total_pixels / (2 * 2 * patch_size)
@@ -30,42 +31,24 @@ def create_sr_latency_chart():
     创建D2D传输总量对比图表
     """
     # 数据
-    categories = ['Baseline', '+PDU', '+Flow']
-    # 计算总和值
-    # a = 1 * (85 + 15)
-    # b = 1 * 85/4 + 0.22/0.52 * 85/4 * 1.5 + 1 * 15 * 4/4
-    # c = 1 * 85/4 + 0.22/0.52 * 85/4 * 1.5 + 1 * 15 * 3/4
-    # d = 1 * 85/4 + 0.22/0.52 * 85/4 * 1.0 + 1 * 15 * 3/4
-    # total_patches = 100
-    # sr_ratio = 0.9
-    # sr_patches = total_patches * sr_ratio
-    # normal_patches = total_patches - sr_patches
-    # whole_patch_nerf_op = 1e6*20*20*2*(7.94 + 2.64)
-    # whole_patch_nerf_op = 1e6*20*20*2*(7.94*5/8 + 2.64/25)*0.4
-    # patch_sr_op = 1e12*0.0003827*10*10/(16*16)
-    # eff_waste = 3.
-    # a = total_patches * whole_patch_nerf_op
-    # b = sr_patches * (1/4*whole_patch_nerf_op+patch_sr_op*(1+eff_waste)) + normal_patches * whole_patch_nerf_op * 4/4
-    # c = sr_patches * (1/4*whole_patch_nerf_op+patch_sr_op*(1+eff_waste)) + normal_patches * whole_patch_nerf_op * 3/4
-    # d = sr_patches * (1/4*whole_patch_nerf_op+patch_sr_op) + normal_patches * whole_patch_nerf_op * 3/4
-    # print(whole_patch_nerf_op, patch_sr_op, patch_sr_op/(whole_patch_nerf_op/4))
-    # a, b, c, d = a/a, b/a, c/a, d/a
-    # print(a, b, c ,d)
+    # categories = ['Baseline', '+PDU', '+Flow']
+    categories = ['Baseline*', '+HDS']
     
     
     a = compute()
     b = compute(sel_sr_rate=0.9, eff_waste=4.)
-    c = compute(sel_sr_rate=0.9, eff_waste=0.)
+    c = compute(sel_sr_rate=0.93, eff_waste=0.)
     print(a, b, c)
     a, b, c = a/a, b/a, c/a
     print(a, b, c)
     
     # 将数据转换为百分比（以baseline为100%）
-    values = [a*100, b*100, c*100]
+    # values = [a*100, b*100, c*100]
+    values = [a*100, c*100]
     colors = ['#A0A0A0', '#707070', '#505050']  # 渐变灰色
-    
+    base = 30
     # 创建图表
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(10, 5.5))
     
     # 创建柱状图
     bars = ax.bar(categories, values, color=colors, edgecolor='black', linewidth=0.8, width=0.6)
@@ -77,16 +60,17 @@ def create_sr_latency_chart():
     
     # 在柱子内部添加数值标签
     for i, (bar, value) in enumerate(zip(bars, values)):
-        height = bar.get_height()
-        # 在柱子中间位置添加文字
-        if height > 3:  # 只有足够高的柱子才在内部显示文字
-            ax.text(bar.get_x() + bar.get_width()/2., height/2,
-                    f'{value:.2f}', ha='center', va='center', 
-                    fontsize=26, fontweight='bold', color='white')
-        else:  # 太矮的柱子在顶部显示文字
-            ax.text(bar.get_x() + bar.get_width()/2. + 0.25, height + 0.5,
-                    f'{value:.2f}', ha='center', va='bottom', 
-                    fontsize=26, fontweight='bold', color='black')
+        if i > 0:
+            height = bar.get_height()
+            # 在柱子中间位置添加文字
+            if height > 3:  # 只有足够高的柱子才在内部显示文字
+                ax.text(bar.get_x() + bar.get_width()/2., height/2,
+                        f'{value:.2f}', ha='center', va='center', 
+                        fontsize=base, fontweight='bold', color='white')
+            else:  # 太矮的柱子在顶部显示文字
+                ax.text(bar.get_x() + bar.get_width()/2. + 0.25, height + 0.5,
+                        f'{value:.2f}', ha='center', va='bottom', 
+                        fontsize=base, fontweight='bold', color='black')
     
     # 添加横向网格线
     ax.grid(True, axis='y', alpha=0.7, linestyle='-', linewidth=0.5, color='gray')
@@ -95,7 +79,7 @@ def create_sr_latency_chart():
     # 添加减少百分比的箭头和标注
     baseline_bar = bars[0]  # Mode 0 Only作为baseline
     baseline_value = values[0]
-    dual_model_bar = bars[2]  # Dual-Model柱子
+    dual_model_bar = bars[1]  # Dual-Model柱子
     
     # 计算虚线的位置和终点
     baseline_right_x = baseline_bar.get_x() + baseline_bar.get_width()
@@ -109,8 +93,8 @@ def create_sr_latency_chart():
     # 为Mode 1 Only和Dual-Model添加箭头和百分比
     for i in range(1, len(values)):
         proposed_bar = bars[i]
-        reduction_percentage = ((baseline_value - values[i]) / baseline_value) * 100
-        # reduction_percentage = baseline_value / values[i]
+        # reduction_percentage = ((baseline_value - values[i]) / baseline_value) * 100
+        reduction_percentage = baseline_value / values[i]
         
         # 计算箭头位置
         proposed_center_x = proposed_bar.get_x() + proposed_bar.get_width()/2
@@ -122,7 +106,7 @@ def create_sr_latency_chart():
         # 添加百分比文字 - 放在每个箭头旁边
         text_x = proposed_center_x + 0.025
         text_y = (line_y + values[i]) / 2  # 箭头中间位置
-        ax.text(text_x, text_y, f'{reduction_percentage:.2f}%', 
+        ax.text(text_x, text_y, f'{reduction_percentage:.2f}x', 
                 ha='left', va='center', fontsize=26, fontweight='bold', color='black')
     
     # 设置坐标轴样式 - 保留所有边框
@@ -131,14 +115,14 @@ def create_sr_latency_chart():
         spine.set_linewidth(1)
     
     # 设置刻度样式
-    ax.tick_params(axis='y', which='major', labelsize=24)
-    ax.tick_params(axis='x', which='major', labelsize=26, labelcolor='black')
+    ax.tick_params(axis='y', which='major', labelsize=base-2)
+    ax.tick_params(axis='x', which='major', labelsize=base, labelcolor='black')
     
     # 添加Y轴标签
-    ax.set_ylabel('Normalized Latency', fontsize=26, fontweight='bold')
+    ax.set_ylabel('Normalized Latency', fontsize=base, fontweight='bold')
     
     # 添加标题
-    ax.set_title('Latency Comparison', fontsize=26, fontweight='bold', pad=20)
+    # ax.set_title('Latency Comparison', fontsize=base, fontweight='bold', pad=20)
     
     # 调整布局
     plt.tight_layout()

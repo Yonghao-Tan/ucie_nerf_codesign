@@ -1,33 +1,54 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-def create_d2d_transfer_chart():
+def compute(sel_sr_rate=0., eff_waste=0.):
+    patch_size = 100
+    H, W = 800, 800
+    
+    coarse_mac_ops, fine_mac_ops = 2.64 * 1e6, 7.94 * 1e6
+    sr_mac_ops = 1e12*0.000181998592*10*10/(16*16)
+    # sr_mac_ops = 1e12*0.000371998592*10*10/(16*16)
+    
+    total_pixels = H * W
+    total_patches_base = total_pixels / (2 * 2 * patch_size)
+    
+    sr_patches = total_patches_base * sel_sr_rate
+    sr_total_mac_ops = sr_patches * sr_mac_ops * (1+eff_waste)
+
+    total_patches_hr = total_patches_base * (1 - sel_sr_rate) * 2 * 2
+    total_patches_lr = total_patches_base * sel_sr_rate
+    total_patches_nerf = total_patches_hr + total_patches_lr
+    
+    nerf_patch_mac_ops = (coarse_mac_ops + fine_mac_ops) * patch_size
+    
+    nerf_total_mac_ops = total_patches_nerf * nerf_patch_mac_ops
+    print(f"{nerf_total_mac_ops/1e9:.2f}G, {sr_total_mac_ops/1e9:.2f}G")
+    total_mac_ops = nerf_total_mac_ops + sr_total_mac_ops
+    return total_mac_ops
+
+def create_sr_latency_chart():
     """
     创建D2D传输总量对比图表
     """
     # 数据
-    categories = ['Mode 0 Only', 'Mode 1 Only', 'Dual-Model']
-    # coarse: 2013.946704         14029.609156          2611.808777
-    # fine: 2803.409135          9537.462963            7884.7332
-    # 计算总和值
-    a, b, c = 14.0+9.5, 2.61+7.88, 2.01+2.8  # GB
-    a, b, c, = a/a, b/a, c/a
-    values = [a*100, b*100, c*100]
-    colors = ['#A0A0A0', '#707070', '#505050']  # 渐变灰色
+    # categories = ['Baseline', '+PDU', '+Flow']
+    categories = ['Baseline', '+HDS']
     
+    a, b = 0.302, 0.028
+    a, b = a/a, b/a
+    values = [a*100, b*100]
+    colors = ['#A0A0A0', '#707070', '#505050']  # 渐变灰色
     base = 30
     # 创建图表
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(10, 5.5))
     
     # 创建柱状图
     bars = ax.bar(categories, values, color=colors, edgecolor='black', linewidth=0.8, width=0.6)
     
     # 设置坐标轴范围
     # ax.set_ylim(0, 20)
-    ax.set_xlim(-0.5, len(categories) - 0.45)  # 适当的右边空间
+    ax.set_xlim(-0.5, len(categories) - 0.35)  # 适当的右边空间
     # ax.set_yticks([0, 5, 10, 15, 20])
-    
-    # 在柱子内部添加数值标签
     
     # 在柱子内部添加数值标签
     for i, (bar, value) in enumerate(zip(bars, values)):
@@ -50,7 +71,7 @@ def create_d2d_transfer_chart():
     # 添加减少百分比的箭头和标注
     baseline_bar = bars[0]  # Mode 0 Only作为baseline
     baseline_value = values[0]
-    dual_model_bar = bars[2]  # Dual-Model柱子
+    dual_model_bar = bars[1]  # Dual-Model柱子
     
     # 计算虚线的位置和终点
     baseline_right_x = baseline_bar.get_x() + baseline_bar.get_width()
@@ -87,19 +108,19 @@ def create_d2d_transfer_chart():
     
     # 设置刻度样式
     ax.tick_params(axis='y', which='major', labelsize=base-2)
-    ax.tick_params(axis='x', which='major', labelsize=base-2, labelcolor='black')
+    ax.tick_params(axis='x', which='major', labelsize=base, labelcolor='black')
     
     # 添加Y轴标签
-    ax.set_ylabel('Normalized D2D\nTransfer Volume (%)', fontsize=base, fontweight='bold')
+    ax.set_ylabel('Normalized EDP* (%)', fontsize=base, fontweight='bold')
     
     # 添加标题
-    # ax.set_title('D2D Transfer Volume Comparison', fontsize=base, fontweight='bold', pad=20)
+    # ax.set_title('Latency Comparison', fontsize=base, fontweight='bold', pad=20)
     
     # 调整布局
     plt.tight_layout()
     
     # 保存图片
-    output_path = '/home/ytanaz/access/IBRNet/memory/statistic_plots/d2d_transfer_comparison.png'
+    output_path = './sr_edp.png'
     plt.savefig(output_path, dpi=400, bbox_inches='tight', facecolor='white')
     print(f"D2D传输量对比图表已保存到: {output_path}")
     
@@ -108,5 +129,5 @@ def create_d2d_transfer_chart():
 
 if __name__ == "__main__":
     # 创建D2D传输量对比图表
-    create_d2d_transfer_chart()
+    create_sr_latency_chart()
     print("D2D传输量对比图表创建完成！")

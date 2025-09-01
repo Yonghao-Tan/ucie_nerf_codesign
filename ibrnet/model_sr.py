@@ -79,8 +79,10 @@ class IBRNetModel(object):
             kwargs = {'upsampling': 2, 'kernel_size': 17, 'res_num': 5, 'block_num': 1, 'bias': True, 'block_script_name': 'OSA', 'block_class_name': 'OSA_Block', 'window_size': 8, 'pe': True, 'ffn_bias': True}
             dim = 64
             if self.new_sr:
-                kwargs = {'upsampling': 2, 'kernel_size': 17, 'res_num': 4, 'block_num': 1, 'bias': True, 'block_script_name': 'OSA', 'block_class_name': 'OSA_Block', 'window_size': 8, 'pe': True, 'ffn_bias': True}
-                dim = 48
+                # kwargs = {'upsampling': 2, 'kernel_size': 17, 'res_num': 4, 'block_num': 1, 'bias': True, 'block_script_name': 'OSA', 'block_class_name': 'OSA_Block', 'window_size': 8, 'pe': True, 'ffn_bias': True}
+                # dim = 48
+                kwargs = {'upsampling': 2, 'kernel_size': 17, 'res_num': 3, 'block_num': 1, 'bias': True, 'block_script_name': 'OSA', 'block_class_name': 'OSA_Block', 'window_size': 8, 'pe': True, 'ffn_bias': True}
+                dim = 40
             self.sr_net = OmniSR(3, 3, dim, **kwargs).to(device)
             from thop import profile
             input_tensor = torch.randn(1, 3, 16, 16).to(device)
@@ -89,20 +91,20 @@ class IBRNetModel(object):
             print(f"FLOPs: {flops * 2 / 1e12}TFLOPs")
             print(f"Parameters: {params / 1e6}M")
             
-            import onnx
-            onnx_path = './sr.onnx'
-            onnx_path_simp = './osr_simp_400_400_new.onnx'
-            in_patch = torch.randn(1, 3, 400, 400).to(device)
-            input = in_patch.cpu()
-            pth_to_onnx(input, self.sr_net, onnx_path)
+            # import onnx
+            # onnx_path = './sr.onnx'
+            # onnx_path_simp = './osr_simp_400_400_new.onnx'
+            # in_patch = torch.randn(1, 3, 400, 400).to(device)
+            # input = in_patch.cpu()
+            # pth_to_onnx(input, self.sr_net, onnx_path)
 
-            from onnxsim import simplify
-            onnx_model = onnx.load(onnx_path)
-            model_simp, check = simplify(onnx_model)
-            assert check, "Simplified ONNX model could not be validated"
-            onnx.save(model_simp, onnx_path_simp)
-            print("Simplified onnx model saved at {}".format(onnx_path_simp))
-            exit()
+            # from onnxsim import simplify
+            # onnx_model = onnx.load(onnx_path)
+            # model_simp, check = simplify(onnx_model)
+            # assert check, "Simplified ONNX model could not be validated"
+            # onnx.save(model_simp, onnx_path_simp)
+            # print("Simplified onnx model saved at {}".format(onnx_path_simp))
+            # exit()
             
 
         if args.q_bits < 16: # TODO

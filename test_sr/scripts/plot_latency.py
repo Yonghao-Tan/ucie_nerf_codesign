@@ -7,7 +7,7 @@ def compute(sel_sr_rate=0., eff_waste=0.):
     
     coarse_mac_ops, fine_mac_ops = 2.64 * 1e6, 7.94 * 1e6
     sr_mac_ops = 1e12*0.0003827*10*10/(16*16)
-    sel_sr_rate = 0.9
+    
     total_pixels = H * W
     total_patches_base = total_pixels / (2 * 2 * patch_size)
     
@@ -21,7 +21,7 @@ def compute(sel_sr_rate=0., eff_waste=0.):
     nerf_patch_mac_ops = (coarse_mac_ops + fine_mac_ops) * patch_size
     
     nerf_total_mac_ops = total_patches_nerf * nerf_patch_mac_ops
-    
+    print(f"{nerf_total_mac_ops/1e9:.2f}G, {sr_total_mac_ops/1e9:.2f}G")
     total_mac_ops = nerf_total_mac_ops + sr_total_mac_ops
     return total_mac_ops
 
@@ -54,12 +54,14 @@ def create_sr_latency_chart():
     
     
     a = compute()
-    b = compute(sel_sr_rate=0.9, eff_waste=2.5)
+    b = compute(sel_sr_rate=0.9, eff_waste=4.)
     c = compute(sel_sr_rate=0.9, eff_waste=0.)
+    print(a, b, c)
     a, b, c = a/a, b/a, c/a
+    print(a, b, c)
     
     # 将数据转换为百分比（以baseline为100%）
-    values = [a*100, c*100, c*100]
+    values = [a*100, b*100, c*100]
     colors = ['#A0A0A0', '#707070', '#505050']  # 渐变灰色
     
     # 创建图表
@@ -79,11 +81,11 @@ def create_sr_latency_chart():
         # 在柱子中间位置添加文字
         if height > 3:  # 只有足够高的柱子才在内部显示文字
             ax.text(bar.get_x() + bar.get_width()/2., height/2,
-                    f'{value}', ha='center', va='center', 
+                    f'{value:.2f}', ha='center', va='center', 
                     fontsize=26, fontweight='bold', color='white')
         else:  # 太矮的柱子在顶部显示文字
             ax.text(bar.get_x() + bar.get_width()/2. + 0.25, height + 0.5,
-                    f'{value}', ha='center', va='bottom', 
+                    f'{value:.2f}', ha='center', va='bottom', 
                     fontsize=26, fontweight='bold', color='black')
     
     # 添加横向网格线

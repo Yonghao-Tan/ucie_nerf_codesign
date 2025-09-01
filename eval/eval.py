@@ -23,8 +23,6 @@ from ibrnet.model_sr import IBRNetModel
 from utils import *
 from ibrnet.projection import Projector
 from ibrnet.data_loaders import dataset_dict
-import tensorflow as tf
-from lpips_tensorflow import lpips_tf
 from torch.utils.data import DataLoader
 from ibrnet.quant_lsq import replace_linear_with_quantized
 
@@ -79,6 +77,8 @@ if __name__ == '__main__':
     running_mean_coarse_ssim = 0
     running_mean_fine_ssim = 0
 
+    import tensorflow as tf
+    from lpips_tensorflow import lpips_tf
     pred_ph = tf.placeholder(tf.float32)
     gt_ph = tf.placeholder(tf.float32)
     distance_t = lpips_tf.lpips(pred_ph, gt_ph, model='net-lin', net='vgg')

@@ -28,10 +28,14 @@ plt.rcParams['axes.unicode_minus'] = False
 class BatchTileReplacementTester:
     """批量tile替换测试器"""
 
-    def __init__(self, llff_test_root="/home/ytanaz/access/IBRNet/eval/llff_test"):
+    # def __init__(self, llff_test_root="/home/ytanaz/access/IBRNet/eval/llff_test"):
+    #     self.llff_test_root = Path(llff_test_root)
+    #     self.eval_llff_path = self.llff_test_root / "eval_llff_golden" # TODO
+    #     self.eval_llff_sr_path = self.llff_test_root / "eval_llff_sr"
+    def __init__(self, llff_test_root="/home/ytanaz/access/IBRNet/eval/nerf_synthetic"):
         self.llff_test_root = Path(llff_test_root)
-        self.eval_llff_path = self.llff_test_root / "eval_llff_golden" # TODO
-        self.eval_llff_sr_path = self.llff_test_root / "eval_llff_sr"
+        self.eval_llff_path = self.llff_test_root / "eval_nerf_synthetic_golden" # TODO
+        self.eval_llff_sr_path = self.llff_test_root / "eval_nerf_synthetic_sr"
         self.tile_size = 32
         self.tile_size = 20
         self.fine_tile_size = self.tile_size // 2  # 在fine分辨率上的tile大小

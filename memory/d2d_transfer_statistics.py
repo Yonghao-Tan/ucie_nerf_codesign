@@ -26,16 +26,18 @@ def create_d2d_transfer_chart():
     # ax.set_yticks([0, 5, 10, 15, 20])
     
     # 在柱子内部添加数值标签
+    
+    # 在柱子内部添加数值标签
     for i, (bar, value) in enumerate(zip(bars, values)):
         height = bar.get_height()
         # 在柱子中间位置添加文字
         if height > 3:  # 只有足够高的柱子才在内部显示文字
             ax.text(bar.get_x() + bar.get_width()/2., height/2,
-                    f'{value}', ha='center', va='center', 
+                    f'{value:.2f}', ha='center', va='center', 
                     fontsize=26, fontweight='bold', color='white')
         else:  # 太矮的柱子在顶部显示文字
-            ax.text(bar.get_x() + bar.get_width()/2., height + 0.5,
-                    f'{value}', ha='center', va='bottom', 
+            ax.text(bar.get_x() + bar.get_width()/2. + 0.25, height + 0.5,
+                    f'{value:.2f}', ha='center', va='bottom', 
                     fontsize=26, fontweight='bold', color='black')
     
     # 添加横向网格线

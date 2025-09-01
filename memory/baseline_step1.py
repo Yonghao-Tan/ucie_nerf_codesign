@@ -20,8 +20,8 @@ W_s = 800
 # 实验参数
 window_sizes = [[40, 40], [80, 80]]
 gs_values = [8, 16, 48]
-window_sizes = [[5, 5], [20, 20], [40, 40], [80, 80], [120, 120], [160, 160]]
-gs_values = [8, 16, 48]
+# window_sizes = [[5, 5], [20, 20], [40, 40], [80, 80], [120, 120], [160, 160]]
+# gs_values = [8, 16, 48]
 
 
 # 输出设置
@@ -38,12 +38,14 @@ if GENERATE_PLOTS:
     print(f"Created output directory: {output_dir}")
 
 # 加载张量
-pixel_locations = torch.load("./nerf_synthetic/locations_hr/pixel_locations_0_n48.pt")
+pixel_locations = torch.load("./nerf_synthetic/locations_hr/pixel_locations_0_n16.pt")
 print("Loaded tensor shape:", pixel_locations.shape)
 
 # Reshape 并提取切片
 pixel_locations_2d = pixel_locations.reshape(8, H_t, W_t, *pixel_locations.shape[2:])
 print("pixel_locations_2d shape:", pixel_locations_2d.shape)
+coarse = True if pixel_locations_2d.shape[3] == 16 else False
+print(f"Coarse Network: {coarse}")
 
 import numpy as np
 

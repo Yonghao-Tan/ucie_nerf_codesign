@@ -19,7 +19,7 @@ H_s = 800
 W_s = 800
 
 # 实验参数
-window_sizes = [[20, 20]] # TODO
+window_sizes = [[5, 5]] # TODO
 gs_values = [8]
 
 
@@ -43,6 +43,9 @@ print("Loaded tensor shape:", pixel_locations.shape)
 # Reshape 并提取切片
 pixel_locations_2d = pixel_locations.reshape(8, H_t, W_t, *pixel_locations.shape[2:])
 print("pixel_locations_2d shape:", pixel_locations_2d.shape)
+
+coarse = True if pixel_locations_2d.shape[3] == 16 else False
+print(f"Coarse Network: {coarse}")
 
 import numpy as np
 
@@ -198,12 +201,17 @@ def run_single_experiment(window_size_h, window_size_w, gs):
 
                     # 提取窗口数据
                     window_data = pixel_locations_slice[i:end_i, j:end_j, k:end_k]
+                    if coarse:
+                        window_data = window_data[2, 2, :]
                     window_flat = window_data.reshape(-1, 2)
                     
                     # 筛选有效坐标
                     valid_mask = (window_flat[:, 0] >= 0) & (window_flat[:, 0] < W_s) & \
                                 (window_flat[:, 1] >= 0) & (window_flat[:, 1] < H_s)
+                    
                     valid_coordinates = window_flat[valid_mask]
+                        
+                        
                     
                     # 如果有有效坐标，计算边界
                     if valid_coordinates.shape[0] > 0:

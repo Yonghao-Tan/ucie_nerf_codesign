@@ -28,12 +28,26 @@ def de_parallel(model):
 # creation/saving/loading of nerf
 ########################################################################################################################
 
-
+def pth_to_onnx(input, model, onnx_path, input_names=['input'], output_names=['output'], device='cpu'):
+    if not onnx_path.endswith('.onnx'):
+        print('Warning! The onnx model name is not correct,\
+              please give a name that ends with \'.onnx\'!')
+        return 0
+    
+    model.eval()
+    model.to('cpu')
+    # print(input.shape)
+    torch.onnx.export(model, input, onnx_path, verbose=True, input_names=input_names, output_names=output_names, opset_version=14) #指定模型的输入，以及onnx的输出路径
+    # torch.onnx.export(model, input, onnx_path)
+    print("Exporting .pth model to onnx model has been successful!")
+    
 class IBRNetModel(object):
     def __init__(self, args, load_opt=True, load_scheduler=True, load_psnr=True):
         self.args = args
         self.sr = args.sr
+        self.new_sr = args.new_sr
         device = torch.device('cuda:{}'.format(args.local_rank))
+        self.device = device
         # create coarse IBRNet
         self.net_coarse = IBRNet(args,
                                  in_feat_ch=self.args.coarse_feat_dim,
@@ -63,20 +77,33 @@ class IBRNetModel(object):
         # 3 3 64 5 2 True
         if self.sr:
             kwargs = {'upsampling': 2, 'kernel_size': 17, 'res_num': 5, 'block_num': 1, 'bias': True, 'block_script_name': 'OSA', 'block_class_name': 'OSA_Block', 'window_size': 8, 'pe': True, 'ffn_bias': True}
-            self.sr_net = OmniSR(3, 3, 64, **kwargs).to(device)
-            # total_params = sum(p.numel() for p in self.sr_net.parameters())
-            # print(f"Total Parameters: {total_params/(1024*1024):.2f}M")
-            # from thop import profile
-            # input_tensor = torch.randn(1, 3, 16, 16).to(device)
-            # # 计算 FLOPs 和参数量
-            # flops, params = profile(self.sr_net, inputs=(input_tensor,))
-            # print(f"FLOPs: {flops * 2 / 1e12}TFLOPs")
-            # print(f"Parameters: {params / 1e6}M")
-            # input_tensor = torch.randn(1, 3, 400, 400).to(device)
-            # # 计算 FLOPs 和参数量
-            # flops, params = profile(self.sr_net, inputs=(input_tensor,))
-            # print(f"FLOPs: {flops * 2 / 1e12}TFLOPs")
-            # print(f"Parameters: {params / 1e6}M")
+            dim = 64
+            if self.new_sr:
+                kwargs = {'upsampling': 2, 'kernel_size': 17, 'res_num': 4, 'block_num': 1, 'bias': True, 'block_script_name': 'OSA', 'block_class_name': 'OSA_Block', 'window_size': 8, 'pe': True, 'ffn_bias': True}
+                dim = 48
+            self.sr_net = OmniSR(3, 3, dim, **kwargs).to(device)
+            from thop import profile
+            input_tensor = torch.randn(1, 3, 16, 16).to(device)
+            # 计算 FLOPs 和参数量
+            flops, params = profile(self.sr_net, inputs=(input_tensor,))
+            print(f"FLOPs: {flops * 2 / 1e12}TFLOPs")
+            print(f"Parameters: {params / 1e6}M")
+            
+            import onnx
+            onnx_path = './sr.onnx'
+            onnx_path_simp = './osr_simp_400_400_new.onnx'
+            in_patch = torch.randn(1, 3, 400, 400).to(device)
+            input = in_patch.cpu()
+            pth_to_onnx(input, self.sr_net, onnx_path)
+
+            from onnxsim import simplify
+            onnx_model = onnx.load(onnx_path)
+            model_simp, check = simplify(onnx_model)
+            assert check, "Simplified ONNX model could not be validated"
+            onnx.save(model_simp, onnx_path_simp)
+            print("Simplified onnx model saved at {}".format(onnx_path_simp))
+            exit()
+            
 
         if args.q_bits < 16: # TODO
             replace_linear_with_quantized(self.net_coarse, device, num_bits=args.q_bits, sparsity=args.sparsity, no_frexp=args.no_frexp)
@@ -204,7 +231,10 @@ class IBRNetModel(object):
             self.net_fine.load_state_dict(to_load['net_fine'], strict=False)
 
         if self.sr:
-            self.sr_net.load_state_dict(to_load['sr_net'], strict=False)
+            if 'sr_net' in to_load:
+                self.sr_net.load_state_dict(to_load['sr_net'], strict=False)
+            else:
+                self.sr_net.to(self.device)
         if load_psnr:
             self.psnr = to_load.get('psnr', None)  # 如果 'psnr' 不存在，返回 None
         else:

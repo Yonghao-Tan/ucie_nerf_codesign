@@ -21,7 +21,8 @@ import matplotlib.pyplot as plt
 def train():
     coarse_path = '../onnx/ibrnet_generalizable_16_simp_s8.onnx'
     fine_path = '../onnx/ibrnet_generalizable_48_simp_s8.onnx'
-    sr_path = '../onnx/osr_simp.onnx'
+    # sr_path = '../onnx/osr_simp_400_400.onnx'
+    sr_path = '../onnx/osr_simp_400_400_new.onnx'
     
     optimizations = {}
     
@@ -31,13 +32,14 @@ def train():
     coarse_ema_s1, fine_ema_s1 = 100, 180
     
     # 4490 9537 7884
-    coarse_d2d_s1, fine_d2d_s1 = 1500.193149, 1828.555128
     coarse_d2d_s1, fine_d2d_s1 = 2013, 2803
+    coarse_d2d_s1_sharing, _ = 90, 2803
     
     # coarse: 2013.946704         14029.609156          2611.808777
     # fine: 2803.409135          9537.462963            7884.7332
+    # coarse shared: 90.114985         12559.488186           104.146843
     hardware_configurations = {
-        'Mode': 1, # 0: efficiency; 1: performance
+        'Mode': 0, # 0: efficiency; 1: performance
         'MACs': 2048,
         'Tm': 16,
         'Trc': 16,
@@ -96,7 +98,7 @@ def train():
     fine_sharing = 9/25
     nerf_sparsity = 0.5
     sr_sparsity = 0.25
-    select_sr = 0.9
+    select_sr = 0.95
     
     # ----------------------------------- Baseline -----------------------------------
     print(f"------------- Baseline -------------")
@@ -222,6 +224,8 @@ def train():
     results['Solution 2a']['Pixel Energy'] = results['Solution 2a']['Total Energy'] / (H * W)
     print(f"Per Pixel Energy: {results['Solution 2a']['Pixel Energy']*1e6:.3f}μJ/pixel")
     results['Solution 2a']['FPS'] = 1 / nerf_total_mac_latency # TODO
+    print(f"Baseline: {results['Baseline']['Chip Latency']:.4f}s; Solution 2a: {results['Solution 2a']['Chip Latency']:.4f}s")
+    print(f"Baseline: {results['Baseline']['Chip Energy']:.4f}J; Solution 2a: {results['Solution 2a']['Chip Energy']:.4f}J")
     
     # ----------------------------------- Solution 2b -----------------------------------
     print(f"------------- Solution 2b -------------")
@@ -240,7 +244,8 @@ def train():
     graph_sr = onnx.shape_inference.infer_shapes(onnx.load(sr_path)).graph
     sr_mac_ops, sr_mac_latency, sr_sram_access, sr_sram_latency = calculate_flops_and_latency(graph_sr, hardware_configurations, optimizations, G=False, debug=False)
     print(f'Vanilla Full-SR OPs: {sr_mac_ops/1e12:.3f}T')
-    K = patch_size / (368 * 504) * 0.2773 * 1e12 / sr_mac_ops # TODO
+    # K = patch_size / (400 * 400) * 0.2773 * 1e12 / sr_mac_ops # TODO
+    K = patch_size / (400 * 400) # TODO
     sr_mac_ops, sr_mac_latency, sr_sram_access, sr_sram_latency = sr_mac_ops*K, sr_mac_latency*K, sr_sram_access*K, sr_sram_latency*K
     sel_sr_rate = optimizations['Select SR']
     total_pixels = H * W
@@ -361,7 +366,8 @@ def train():
     results['ALL']['Off-Chip Energy'] = solution1_dram_energy
     # print(f"EMA Energy: {solution1_dram_energy:.3f}J, EMA Latency: {solution1_dram_latency:.3f}s")
     
-    solution1_d2d_access_sv_coarse_per_patch = solution1_d2d_access_sv_coarse / (2*2*total_patches_base) # 因为这是一个20*20的大patch(HR), 如果是LR的话只需要做其中1/4, 而后面total_patches_nerf就已经把需要做的10x10大小的patch全部考虑了
+    solution1_d2d_access_sv_coarse_coarse_sharing = coarse_d2d_s1_sharing * (1024 ** 2) # assume 5x5 tile, no unified cache
+    solution1_d2d_access_sv_coarse_per_patch = solution1_d2d_access_sv_coarse_coarse_sharing / (2*2*total_patches_base) # 因为这是一个20*20的大patch(HR), 如果是LR的话只需要做其中1/4, 而后面total_patches_nerf就已经把需要做的10x10大小的patch全部考虑了; Coarse sharing之后coarse不需要那么多d2d
     solution1_d2d_access_sv_fine_per_patch = solution1_d2d_access_sv_fine / (2*2*total_patches_base)
     sr_solution1_d2d_access_sv_coarse = total_patches_nerf * solution1_d2d_access_sv_coarse_per_patch
     sr_solution1_d2d_access_sv_fine = total_patches_nerf * solution1_d2d_access_sv_fine_per_patch

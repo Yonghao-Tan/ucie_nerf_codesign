@@ -73,6 +73,7 @@ def config_parser():
     parser.add_argument('--sv_top_k', type=int, default=6, help="2D feature dimension for fine level")
     parser.add_argument('--use_moe', action='store_true', help='using fine sharing')
     parser.add_argument('--sr', action='store_true', help='using super-resolution network')
+    parser.add_argument('--new_sr', action='store_true', help='using super-resolution network')
     parser.add_argument('--sample_point_sparsity', action='store_true', help='using coarse sharing')
     parser.add_argument('--sv_prune', action='store_true', help='using source view pruning')
     

@@ -1,20 +1,20 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-def create_d2d_transfer_chart():
+def create_sr_latency_chart():
     """
     创建D2D传输总量对比图表
     """
     # 数据
-    categories = ['Baseline', '+Grouping', '+PAU']
-    # 计算总和值
-    values = [14057+9556, 1248+1147, 200+376]  # GB
-    values = [v / 1000 for v in values]
-    # values = [16.47, 8.01, 2.52]  # 四舍五入后的值
-    colors = ['#A0A0A0', '#707070', '#505050']  # 渐变灰色
+    # Baseline: 1.5582J; Solution 2a: 0.2987J
+    categories = ['Baseline', '+CFSRE']
+    a, b = 1.5582, 0.2987
+    a, b = a / a, b / a
+    values = [a*100, b*100]
+    colors = ['#B0B0B0', '#505050']  # 渐变灰色
     
     # 创建图表
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(10, 8))
     
     # 创建柱状图
     bars = ax.bar(categories, values, color=colors, edgecolor='black', linewidth=0.8, width=0.6)
@@ -23,8 +23,6 @@ def create_d2d_transfer_chart():
     # ax.set_ylim(0, 20)
     ax.set_xlim(-0.5, len(categories) - 0.35)  # 适当的右边空间
     # ax.set_yticks([0, 5, 10, 15, 20])
-    
-    # 在柱子内部添加数值标签
     
     # 在柱子内部添加数值标签
     for i, (bar, value) in enumerate(zip(bars, values)):
@@ -46,7 +44,7 @@ def create_d2d_transfer_chart():
     # 添加减少百分比的箭头和标注
     baseline_bar = bars[0]  # Mode 0 Only作为baseline
     baseline_value = values[0]
-    dual_model_bar = bars[2]  # Dual-Model柱子
+    dual_model_bar = bars[1]  # Dual-Model柱子
     
     # 计算虚线的位置和终点
     baseline_right_x = baseline_bar.get_x() + baseline_bar.get_width()
@@ -86,17 +84,17 @@ def create_d2d_transfer_chart():
     ax.tick_params(axis='x', which='major', labelsize=26, labelcolor='black')
     
     # 添加Y轴标签
-    ax.set_ylabel('EMA (GB)', fontsize=26, fontweight='bold')
+    ax.set_ylabel('Normalized Energy', fontsize=26, fontweight='bold')
     
     # 添加标题
-    ax.set_title('EMA Comparison', fontsize=26, fontweight='bold', pad=20)
+    ax.set_title('Energy Comparison', fontsize=26, fontweight='bold', pad=20)
     
     # 调整布局
     plt.tight_layout()
     
     # 保存图片
-    output_path = '/home/ytanaz/access/IBRNet/memory/statistic_plots/ema_comparison.png'
-    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
+    output_path = './cfsre_energy.png'
+    plt.savefig(output_path, dpi=400, bbox_inches='tight', facecolor='white')
     print(f"D2D传输量对比图表已保存到: {output_path}")
     
     # 不显示图表，直接关闭
@@ -104,5 +102,5 @@ def create_d2d_transfer_chart():
 
 if __name__ == "__main__":
     # 创建D2D传输量对比图表
-    create_d2d_transfer_chart()
+    create_sr_latency_chart()
     print("D2D传输量对比图表创建完成！")

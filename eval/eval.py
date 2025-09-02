@@ -28,7 +28,11 @@ from ibrnet.quant_lsq import replace_linear_with_quantized
 
 # os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
-
+def get_parameter_number(model):
+    total_num = sum(p.numel() for p in model.parameters())
+    trainable_num = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Total: {total_num/1e6}M, Trainable: {trainable_num}")
+    
 if __name__ == '__main__':
     parser = config_parser()
     args = parser.parse_args()
@@ -41,6 +45,10 @@ if __name__ == '__main__':
     extra_out_dir = extra_out_dir + '_sr' if args.sr else extra_out_dir
     print("saving results to eval/{}...".format(extra_out_dir))
     os.makedirs(extra_out_dir, exist_ok=True)
+    # get_parameter_number(model.feature_net)
+    # get_parameter_number(model.net_coarse)
+    # get_parameter_number(model.net_fine)
+    # get_parameter_number(model.sr_net)
 
     projector = Projector(device='cuda:0')
 

@@ -34,7 +34,7 @@ class BatchTileReplacementTester:
     #     self.eval_llff_sr_path = self.llff_test_root / "eval_llff_sr"
     def __init__(self, llff_test_root="/home/ytanaz/access/IBRNet/eval/nerf_synthetic"):
         self.llff_test_root = Path(llff_test_root)
-        self.eval_llff_path = self.llff_test_root / "eval_nerf_synthetic_golden" # TODO
+        self.eval_llff_path = self.llff_test_root / "eval_nerf_synthetic_g" # TODO
         self.eval_llff_sr_path = self.llff_test_root / "eval_nerf_synthetic_sr"
         self.tile_size = 32
         self.tile_size = 20

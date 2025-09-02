@@ -26,32 +26,47 @@ def train():
     sr_path = '../onnx/osr_simp_400_400_small.onnx'
     
     optimizations = {}
+    dataset = 0
+    nerf_config = {
+        'H': 800 if dataset == 0 else 756,
+        'W': 800 if dataset == 0 else 1008,
+        'Patch Size': 100,
+        'SV': 8
+    }
     
-    coarse_ema_base, fine_ema_base = 28836, 29053
-    coarse_ema_base, fine_ema_base = 14057, 9556
-    coarse_ema_s1, fine_ema_s1 = 200, 376
-    coarse_ema_s1, fine_ema_s1 = 100, 180
-    
-    # 4490 9537 7884
-    coarse_d2d_s1, fine_d2d_s1 = 2013, 2803
-    coarse_d2d_s1_sharing, _ = 90, 2803
+    if dataset == 1:
+        # llff 116.374161 2332.965029 135.249557; 1827.170215 2578.709654 9299.164772
+        coarse_ema_base, fine_ema_base = 2583, 3087
+        coarse_ema_s1, fine_ema_s1 = 108.8, 108.8
+        coarse_d2d_s1, fine_d2d_s1 = 2013, 2803
+        coarse_d2d_s1_sharing, _ = 116.374161, 1827
+    else:
+        # syn
+        # coarse_ema_base, fine_ema_base = 28836, 29053
+        coarse_ema_base, fine_ema_base = 14057, 9556
+        # coarse_ema_s1, fine_ema_s1 = 200, 376
+        coarse_ema_s1, fine_ema_s1 = 100, 180
+        
+        coarse_d2d_s1, fine_d2d_s1 = 2013, 2803
+        coarse_d2d_s1_sharing, _ = 90, 2803
     
     # coarse: 2013.946704         14029.609156          2611.808777
     # fine: 2803.409135          9537.462963            7884.7332
     # coarse shared: 90.114985         12559.488186           104.146843
     hardware_configurations = {
-        'Mode': 0, # 0: efficiency; 1: performance
+        'Mode': 1, # 0: efficiency; 1: performance
         'MACs': 2048,
         'Tm': 16,
         'Trc': 16,
-        'MAC Efficiency': 1., # 如果这个小了那功耗也应该变小? 好像没变应该是除的时候化过
+        'MAC Efficiency': 0.99, # 如果这个小了那功耗也应该变小? 好像没变应该是除的时候化过
         'Activation Buffer Bandwidth': 2048 / 8,
         'Weight Buffer Bandwidth': 1024 / 8,
         'Source View Buffer Bandwidth': 16 * 96 / 8,
         'Chiplets': 4,
-        'DRAM Bandwidth': 25.6 * 1000 ** 3 * 4,
-        # 'DRAM Energy': 112.54 * 1e-12,
-        'DRAM Energy': 60.4 * 1e-12,
+        # 'DRAM Bandwidth': 25.6 * 1000 ** 3 * 4,
+        'DRAM Bandwidth': 12.8 * 1000 ** 3 * 4,
+        'DRAM Energy': 98.8 * 1e-12,
+        # 'DRAM Energy': 60.4 * 1e-12,
         'UCIE Bandwidth': 64 * 1000 ** 3,
         'UCIE Energy': 1.108 * 8 * 1e-12,
         'OP per Projection': 16, # [3, 4] @ [4, 1] (12), & 1 division (4)
@@ -59,23 +74,20 @@ def train():
         # 'UCIe Bandwidth':    
     }
     mac_scaling = 2.5
-    mac_scaling = 1.5
     sram_scaling = 1.25
+    mac_scaling = 1.35
+    sram_scaling = 1.2
     if hardware_configurations['Mode'] == 1:
         hardware_configurations['AI Core Frequency'] = 1200 * 1e6
         hardware_configurations['OP Energy'] = 0.273 * 1e-12 / mac_scaling
         hardware_configurations['SRAM Energy'] = 2.430 * 1e-12 / sram_scaling
+        hardware_configurations['UCIE IDLE Power'] = 187.10 * 1e-3
     else:
         hardware_configurations['AI Core Frequency'] = 800 * 1e6
         hardware_configurations['OP Energy'] = 0.105 * 1e-12 / mac_scaling
         hardware_configurations['SRAM Energy'] = 0.897 * 1e-12 / sram_scaling
+        hardware_configurations['UCIE IDLE Power'] = 187.10 * 1e-3 / 2
     
-    nerf_config = {
-        'H': 800,
-        'W': 800,
-        'Patch Size': 100,
-        'SV': 8
-    }
     
     results = {
         'Baseline': {},
@@ -177,15 +189,15 @@ def train():
     f1_sram_energy = nerf_total_sram_energy
     f1_interp_energy = interpolation_baseline_sram_energy + interpolation_baseline_interpolation_energy
     f1_ema_energy = results['Baseline']['Off-Chip Energy']
-    print(f"{f1_mac_energy:.3f}J, {f1_sram_energy:.3f}J, {f1_interp_energy:.3f}J, {f1_ema_energy:.3f}J")
-    print(f"{f1_mac_energy+f1_sram_energy:.3f}J, {f1_interp_energy:.3f}J, {f1_ema_energy:.3f}J")
+    # print(f"{f1_mac_energy:.3f}J, {f1_sram_energy:.3f}J, {f1_interp_energy:.3f}J, {f1_ema_energy:.3f}J")
+    print(f"{f1_ema_energy:.3f}J, {f1_mac_energy+f1_sram_energy:.3f}J, {f1_interp_energy:.3f}J, ")
     # print(f"{interpolation_baseline_interpolation_ops/1e9:.3f}G")
     # print(f"{interpolation_baseline_sram_access/1e9:.3f}G")
     f1_mac_latency = nerf_total_mac_latency
     f1_sram_latency = nerf_total_sram_latency
     f1_interp_latency = interpolation_baseline_sram_latency + interpolation_baseline_interpolation_latency
     f1_ema_latency= results['Baseline']['Off-Chip Latency']
-    print(f"{f1_mac_latency:.3f}ms, {f1_sram_latency:.3f}ms, {f1_interp_latency*0.125:.3f}ms, {f1_ema_latency:.3f}ms") # hide interp.
+    print(f"{f1_ema_latency:.3f}ms, {f1_mac_latency:.3f}ms, {f1_sram_latency:.3f}ms, {f1_interp_latency*0.125:.3f}ms") # hide interp.
     # print(f"{f1_mac_latency+f1_sram_latency:.3f}ms, {f1_interp_latency:.3f}ms, {f1_ema_latency:.3f}ms")
     
     
@@ -448,15 +460,19 @@ def train():
     
     # results['ALL']['Chip Latency'] += total_mac_latency
     total_interpolation_energy = sr_solution1_d2d_energy + interpolation_sr_solution1_sram_energy + interpolation_sr_solution1_interpolation_energy
-    print(f"{results['ALL']['Chip Energy']:.2f}J, {total_interpolation_energy:.2f}J, {results['ALL']['Inter-Chip Energy']:.2f}J")
+    print(f"Chip: {results['ALL']['Chip Energy']:.3f}J, Interpolation: {total_interpolation_energy:.3f}J, UCIe: {results['ALL']['Inter-Chip Energy']:.3f}J, DRAM: {results['ALL']['Off-Chip Energy']:.3f}J")
+    print(f"Chip: {results['ALL']['Chip Latency']*1e3:.3f}ms, UCIe: {results['ALL']['Inter-Chip Latency']*1e3:.3f}ms, DRAM: {results['ALL']['Off-Chip Latency']*1e3:.3f}ms")
+    d2d_idle_energy = (results['ALL']['Chip Latency']-results['ALL']['Inter-Chip Latency']) * hardware_configurations['Chiplets'] * hardware_configurations['UCIE IDLE Power'] # 
+    print(f"D2D IDLE Energy: {d2d_idle_energy:.3f}J, Trans energy: {sr_solution1_d2d_energy:.3f}J")
     results['ALL']['Chip Energy'] += total_interpolation_energy
+    results['ALL']['Chip Energy'] += d2d_idle_energy # TODO
     
     org_mac_ops = results['Baseline']['OPs']
     print(f"TOPS/W: {org_mac_ops*1e-12/total_energy:.3f}")
     total_energy = results['ALL']['Chip Energy'] # + results['ALL']['Inter-Chip Energy'] 算过了
     results['Baseline']['Off-Chip Latency'] = baseline_dram_latency
     results['ALL']['Latency'] = results['ALL']['Chip Latency'] + results['ALL']['Off-Chip Latency'] * 0.5 # TODO
-    results['ALL']['FPS'] = 1 / results['ALL']['Latency'] # TODO
+    results['ALL']['FPS'] = 1 / results['ALL']['Latency']
     print(f"Final On-Chip Latency: {results['ALL']['Chip Latency']:.4f}s, Final Off-Chip Latency: {results['ALL']['Off-Chip Latency']:.4f}s")
     print(f"Final FPS per Frame: {results['ALL']['FPS']:.2f}")
     print(f"Final Energy per Frame: {(total_energy+solution1_dram_energy)*1e3:.2f}mJ")
@@ -464,6 +480,8 @@ def train():
     print(f"TOPS/W Theoretical Scaling Number: {org_mac_ops/total_mac_ops:.2f}x")
     print(f"TOPS/W with Interpolation: {org_mac_ops*1e-12/total_energy:.3f}")
     results['ALL']['Pixel Energy'] = (total_energy+solution1_dram_energy)/(H*W)
+    
+    print(f"Total Chip Energy: {results['ALL']['Chip Energy'] * results['ALL']['FPS']:.3f}W")
     
     create_pixel_energy_chart(results)
     # create_efficiency_chart(results)

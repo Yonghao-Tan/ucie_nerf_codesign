@@ -10,6 +10,7 @@ def create_d2d_transfer_chart():
     # 计算总和值
     # a, b, c = 28.99, 28.15, 28.15+0.57
     a, b, c = 28.99, 28.15, 28.15+0.71
+    a, b, c = 26.14, 26.14-0.54, 26.14-0.54+0.41
     values = [a, b, c]
     colors = ['#A0A0A0', '#707070', '#505050']  # 渐变灰色
     base = 26
@@ -21,22 +22,18 @@ def create_d2d_transfer_chart():
     bars = ax.bar(categories, values, color=colors, edgecolor='black', linewidth=0.8, width=0.6)
     
     # 设置坐标轴范围
-    ax.set_ylim(28.0, 29.0)
-    ax.set_yticks([28.0, 28.5, 29.0])
+    ax.set_ylim(25.5, 26.25)
+    ax.set_yticks([25.5, 25.75, 26.0, 26.25])
     
     # 在柱子内部添加数值标签
     for i, (bar, value) in enumerate(zip(bars, values)):
-        if i > 0:
-            height = bar.get_height()
-            # 在柱子中间位置添加文字
-            if height > 0.1:  # 只有足够高的柱子才在内部显示文字
-                ax.text(bar.get_x() + bar.get_width()/2., height/2,
-                        f'{value:.2f}', ha='center', va='center', 
-                        fontsize=base, fontweight='bold', color='white')
-            else:  # 太矮的柱子在顶部显示文字
-                ax.text(bar.get_x() + bar.get_width()/2. + 0.25, height + 0.5,
-                        f'{value:.2f}', ha='center', va='bottom', 
-                        fontsize=base, fontweight='bold', color='black')
+        height = bar.get_height()
+        # 在柱子中间位置添加文字（相对于柱子的实际位置）
+        y_bottom = 25.5  # y轴下限
+        y_center = y_bottom + (height - y_bottom) / 2  # 柱子的中间位置
+        ax.text(bar.get_x() + bar.get_width()/2., y_center,
+                f'{value:.2f}', ha='center', va='center', 
+                fontsize=base-4, fontweight='bold', color='white')
     
     # 添加横向网格线
     ax.grid(True, axis='y', alpha=0.7, linestyle='-', linewidth=0.5, color='gray')
@@ -59,9 +56,9 @@ def create_d2d_transfer_chart():
                 arrowprops=dict(arrowstyle='->', color='black', lw=2.5, mutation_scale=25))
     
     # 第一个箭头的标签 (-0.84)
-    text_x_1 = (baseline_center_x + middle_center_x) / 2 + 0.2
-    text_y_1 = (baseline_top_y + middle_top_y) / 2 + 0.15
-    ax.text(text_x_1, text_y_1, '-0.84', 
+    text_x_1 = (baseline_center_x + middle_center_x) / 2 + 0.25
+    text_y_1 = (baseline_top_y + middle_top_y) / 2 + 0.1
+    ax.text(text_x_1, text_y_1, '-0.54', 
             ha='center', va='center', fontsize=base, fontweight='bold', color='black')
     
     # 第二个箭头：从中间柱子斜向指向最右边柱子
@@ -75,9 +72,9 @@ def create_d2d_transfer_chart():
                 arrowprops=dict(arrowstyle='->', color='black', lw=2.5, mutation_scale=25))
     
     # 第二个箭头的标签 (+0.57)
-    text_x_2 = (middle_center_x + last_center_x) / 2 - 0.33
+    text_x_2 = (middle_center_x + last_center_x) / 2 - 0.36
     text_y_2 = (middle_top_y + last_top_y) / 2 - 0.05
-    ax.text(text_x_2, text_y_2, '+0.71', 
+    ax.text(text_x_2, text_y_2, '+0.41', 
             ha='center', va='center', fontsize=base, fontweight='bold', color='black')
     
     # 设置坐标轴样式 - 保留所有边框

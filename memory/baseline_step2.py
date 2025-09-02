@@ -10,13 +10,13 @@ import pandas as pd
 # 配置参数
 H_t = 756  # 图像高度
 W_t = 1008   # 图像宽度
-H_t = 378  # 图像高度
-W_t = 504   # 图像宽度
+H_s = 756  # 图像高度
+W_s = 1008   # 图像宽度
 
-H_t = 800  # 图像高度
-W_t = 800   # 图像宽度
-H_s = 800
-W_s = 800
+# H_t = 800  # 图像高度
+# W_t = 800   # 图像宽度
+# H_s = 800
+# W_s = 800
 
 # 实验参数
 window_sizes = [[5, 5]] # TODO
@@ -37,7 +37,8 @@ if GENERATE_PLOTS:
     print(f"Created output directory: {output_dir}")
 
 # 加载张量
-pixel_locations = torch.load("./nerf_synthetic/locations_hr/pixel_locations_0_n16.pt")
+# pixel_locations = torch.load("./llff/locations_hr/pixel_locations_0_n16.pt")
+pixel_locations = torch.load("./llff/locations_hr/pixel_locations_0_n48.pt")
 print("Loaded tensor shape:", pixel_locations.shape)
 
 # Reshape 并提取切片
@@ -201,7 +202,7 @@ def run_single_experiment(window_size_h, window_size_w, gs):
 
                     # 提取窗口数据
                     window_data = pixel_locations_slice[i:end_i, j:end_j, k:end_k]
-                    if coarse:
+                    if coarse and window_data.shape[0] * window_data.shape[1] == 25:
                         window_data = window_data[2, 2, :]
                     window_flat = window_data.reshape(-1, 2)
                     

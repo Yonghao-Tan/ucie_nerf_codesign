@@ -108,10 +108,10 @@ class IBRNetModel(object):
             
 
         if args.q_bits < 16: # TODO
-            replace_linear_with_quantized(self.net_coarse, device, num_bits=args.q_bits, sparsity=args.sparsity, no_frexp=args.no_frexp)
+            replace_linear_with_quantized(self.net_coarse, device, num_bits=args.q_bits, sparsity=0., no_frexp=args.no_frexp) # TODO
             replace_linear_with_quantized(self.net_fine, device, num_bits=args.q_bits, sparsity=args.sparsity, no_frexp=args.no_frexp)
             # if self.sr:
-            #     replace_conv2d_with_quantized(self.sr_net, device, num_bits=args.q_bits, sparsity=args.sr_sparsity, no_frexp=args.no_frexp)
+            #     replace_conv2d_with_quantized(self.sr_net, device, num_bits=args.q_bits, sparsity=args.sr_sparsity, no_frexp=args.no_frexp) # no_frexp好像有问题
                 # replace_conv2d_with_quantized(self.sr_net, device, num_bits=args.q_bits, sparsity=None, no_frexp=args.no_frexp)
         
         # optimizer and learning rate scheduler
@@ -235,6 +235,7 @@ class IBRNetModel(object):
         if self.sr:
             if 'sr_net' in to_load:
                 self.sr_net.load_state_dict(to_load['sr_net'], strict=False)
+                self.sr_net.to(self.device)
             else:
                 self.sr_net.to(self.device)
         if load_psnr:

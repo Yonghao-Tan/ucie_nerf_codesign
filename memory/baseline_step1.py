@@ -13,15 +13,15 @@ W_t = 1008   # 图像宽度
 H_s = 756
 W_s = 1008
 
-H_t = 800  # 图像高度
-W_t = 800   # 图像宽度
-H_s = 800
-W_s = 800
+# H_t = 800  # 图像高度
+# W_t = 800   # 图像宽度
+# H_s = 800
+# W_s = 800
 # 实验参数
-window_sizes = [[10, 10]]
+window_sizes = [[5, 5]]
 gs_values = [8, 16, 48]
-window_sizes = [[5, 5], [10, 10], [20, 20], [40, 40], [80, 80], [160, 160], [800, 800]]
-gs_values = [8, 16, 48]
+# window_sizes = [[5, 5], [10, 10], [20, 20], [40, 40], [80, 80], [160, 160], [800, 800]]
+# gs_values = [8, 16, 48]
 
 
 # 输出设置
@@ -38,7 +38,8 @@ if GENERATE_PLOTS:
     print(f"Created output directory: {output_dir}")
 
 # 加载张量
-pixel_locations = torch.load("./nerf_synthetic/locations_hr/pixel_locations_0_n48.pt")
+# pixel_locations = torch.load("./nerf_synthetic/locations_hr/pixel_locations_0_n48.pt")
+pixel_locations = torch.load("./llff/locations_hr/pixel_locations_0_n48.pt")
 print("Loaded tensor shape:", pixel_locations.shape)
 
 # Reshape 并提取切片

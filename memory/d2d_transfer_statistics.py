@@ -90,7 +90,7 @@ def create_d2d_transfer_chart():
     ax.tick_params(axis='x', which='major', labelsize=base-2, labelcolor='black')
     
     # 添加Y轴标签
-    ax.set_ylabel('Normalized D2D\nTransfer Volume (%)', fontsize=base, fontweight='bold')
+    ax.set_ylabel('Normalized D2D\nTransfer Volume** (%)', fontsize=base, fontweight='bold')
     
     # 添加标题
     # ax.set_title('D2D Transfer Volume Comparison', fontsize=base, fontweight='bold', pad=20)

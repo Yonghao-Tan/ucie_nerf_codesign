@@ -57,7 +57,7 @@ axs[1].axis('equal')
 
 # 在图的空白处添加注释
 fig.text(
-	0.5, 0.02,
+	0.5, 0.40,
 	'Off-chip Memory: DDR3-1600, 12.8GB/s\nOn-chip PE Array: 2048 MAC @ 1200MHz',
 	ha='center', va='center', fontsize=19, fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='gray')
 )

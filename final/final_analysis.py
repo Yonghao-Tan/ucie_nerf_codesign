@@ -26,7 +26,7 @@ def train():
     sr_path = '../onnx/osr_simp_400_400_small.onnx'
     
     optimizations = {}
-    dataset = 0
+    dataset = 1
     nerf_config = {
         'H': 800 if dataset == 0 else 756,
         'W': 800 if dataset == 0 else 1008,
@@ -54,7 +54,7 @@ def train():
     # fine: 2803.409135          9537.462963            7884.7332
     # coarse shared: 90.114985         12559.488186           104.146843
     hardware_configurations = {
-        'Mode': 1, # 0: efficiency; 1: performance; 2: profile 1GHz
+        'Mode': 0, # 0: efficiency; 1: performance; 2: profile 1GHz # 3: new eff
         'MACs': 2048,
         'Tm': 16,
         'Trc': 16,
@@ -87,12 +87,17 @@ def train():
         hardware_configurations['OP Energy'] = 0.22 * 1e-12 / mac_scaling
         hardware_configurations['SRAM Energy'] = 2.430 * (0.22 / 0.273) * 1e-12 / sram_scaling
         hardware_configurations['UCIE IDLE Power'] = 187.10 * 1e-3 / (0.22 / 0.105)
-    else:
+    elif hardware_configurations['Mode'] == 0:
         hardware_configurations['AI Core Frequency'] = 800 * 1e6
-        hardware_configurations['OP Energy'] = 0.105 * 1e-12 / mac_scaling
-        hardware_configurations['SRAM Energy'] = 0.897 * 1e-12 / sram_scaling
+        hardware_configurations['OP Energy'] = 0.105 * 1e-12 / mac_scaling # 209 * 265 / (800* 1e6) / 655360 * 1e12
+        hardware_configurations['SRAM Energy'] = 0.897 * 1e-12 / sram_scaling # 127.5 * 265 / (800 * 1e6) / 47104 * 1e12
         # hardware_configurations['UCIE IDLE Power'] = 187.10 * 1e-3 / (0.273 / 0.105)
-        hardware_configurations['UCIE IDLE Power'] = 187.10 * 1e-3
+        hardware_configurations['UCIE IDLE Power'] = 187.10 * 1e-3 / 1.125
+    else:
+        hardware_configurations['AI Core Frequency'] = 600 * 1e6 
+        hardware_configurations['OP Energy'] = 0.0826 * 1e-12 / mac_scaling # 197.5 * 265 / (600 * 1e6) / (47104*8.5+655360) * 1e12 * 1e-3
+        hardware_configurations['SRAM Energy'] = 0.702 * 1e-12 / sram_scaling # (197.5*1e-3*265/(600*1e6) - 0.0826 * 655360 * 1e-12) / 47104 * 1e12
+        hardware_configurations['UCIE IDLE Power'] = 187.10 * 1e-3 / 1.25
     
     
     results = {
@@ -176,6 +181,7 @@ def train():
     
     results['Baseline']['OP'] = (coarse_mac_ops + fine_mac_ops) * H * W
     results['Baseline']['FPS'] = 1 / (baseline_dram_latency + nerf_total_mac_latency)
+    results['Baseline']['FPS'] = 1 / (baseline_dram_latency * 0.5 + nerf_total_mac_latency)
     
     patch_size = 100
     total_patches_nerf = H * W / patch_size

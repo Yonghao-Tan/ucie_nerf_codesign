@@ -34,7 +34,8 @@ def create_sr_latency_chart():
     # categories = ['Baseline', '+PDU', '+Flow']
     categories = ['Baseline', '+HDS']
     
-    a, b = 0.302, 0.028
+    # a, b = 0.302, 0.028
+    a, b = 0.771, 0.086
     a, b = a/a, b/a
     values = [a*100, b*100]
     colors = ['#A0A0A0', '#707070', '#505050']  # 渐变灰色

@@ -7,7 +7,7 @@ def create_d2d_transfer_chart():
     """
     # 数据
     # categories = ['Baseline', '+Unified\nCache', '+PAU']
-    categories = ['Baseline', '+UC', '+PAU']
+    categories = ['Baseline', ' +Unified Cache', '+PAU']
     # 计算总和值
     # a, b, c = 14057+9556, 1248+1147, 200+376
     # a, b, c = 14057+9556, 3990+3039, 200+376

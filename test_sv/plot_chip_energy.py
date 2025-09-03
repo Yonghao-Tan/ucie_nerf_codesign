@@ -10,6 +10,7 @@ def create_sr_latency_chart():
     # Baseline Energy: 1.5582J; Solution 2a Energy: 0.2987J
     categories = ['Baseline', '+CFSRE']
     a, b = 1.5582, 0.2987
+    a, b = 4.6933, 1
     a, b = a / a, b / a
     values = [a*100, b*100]
     colors = ['#B0B0B0', '#505050']  # 渐变灰色

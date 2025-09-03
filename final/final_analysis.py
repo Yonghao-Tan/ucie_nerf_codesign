@@ -54,7 +54,7 @@ def train():
     # fine: 2803.409135          9537.462963            7884.7332
     # coarse shared: 90.114985         12559.488186           104.146843
     hardware_configurations = {
-        'Mode': 1, # 0: efficiency; 1: performance
+        'Mode': 1, # 0: efficiency; 1: performance; 2: profile 1GHz
         'MACs': 2048,
         'Tm': 16,
         'Trc': 16,
@@ -82,11 +82,17 @@ def train():
         hardware_configurations['OP Energy'] = 0.273 * 1e-12 / mac_scaling
         hardware_configurations['SRAM Energy'] = 2.430 * 1e-12 / sram_scaling
         hardware_configurations['UCIE IDLE Power'] = 187.10 * 1e-3
+    elif hardware_configurations['Mode'] == 2:
+        hardware_configurations['AI Core Frequency'] = 1000 * 1e6
+        hardware_configurations['OP Energy'] = 0.22 * 1e-12 / mac_scaling
+        hardware_configurations['SRAM Energy'] = 2.430 * (0.22 / 0.273) * 1e-12 / sram_scaling
+        hardware_configurations['UCIE IDLE Power'] = 187.10 * 1e-3 / (0.22 / 0.105)
     else:
         hardware_configurations['AI Core Frequency'] = 800 * 1e6
         hardware_configurations['OP Energy'] = 0.105 * 1e-12 / mac_scaling
         hardware_configurations['SRAM Energy'] = 0.897 * 1e-12 / sram_scaling
-        hardware_configurations['UCIE IDLE Power'] = 187.10 * 1e-3 / 2
+        # hardware_configurations['UCIE IDLE Power'] = 187.10 * 1e-3 / (0.273 / 0.105)
+        hardware_configurations['UCIE IDLE Power'] = 187.10 * 1e-3
     
     
     results = {
@@ -222,9 +228,6 @@ def train():
     results['Solution 1']['Inter-Chip Latency'] = solution1_d2d_latency
     results['Solution 1']['Inter-Chip Energy'] = solution1_d2d_energy
     print(f"D2D Energy: {solution1_d2d_energy:.3f}J, D2D Latency: {solution1_d2d_latency:.3f}s")
-    results['Solution 1']['Total Energy'] = results['Baseline']['Chip Energy'] + results['Solution 1']['Off-Chip Energy'] + results['Solution 1']['Inter-Chip Energy']
-    results['Solution 1']['Pixel Energy'] = results['Solution 1']['Total Energy'] / (H * W)
-    print(f"Per Pixel Energy: {results['Solution 1']['Pixel Energy']*1e6:.3f}μJ/pixel")
     
     optimizations = {
         'Channel Pruning': nerf_sparsity, # TODO
@@ -238,6 +241,34 @@ def train():
     # print(f"Ray: Fine Network Latency: {fine_sram_latency * 1e6:.3f}us")
     nerf_total_mac_latency = (coarse_mac_latency + fine_mac_latency) * H * W
     results['Solution 1']['FPS'] = 1 / nerf_total_mac_latency # TODO
+    results['Solution 1']['Chip Latency'] = nerf_total_mac_latency
+    results['Solution 1']['Chip Energy'] = results['Baseline']['Chip Energy'] 
+    
+    # ---
+    projection_solution1_sram_access = H * W * (16 + 48) * 3 * nerf_config['SV']
+    projection_solution1_proj_ops = hardware_configurations['OP per Projection'] * H * W * (16 + 48) * nerf_config['SV']
+    
+    interpolation_solution1_sram_access = solution1_d2d_access + H * W * (16 + 48) * (3 + 32) * nerf_config['SV'] + projection_solution1_sram_access
+    interpolation_solution1_sram_energy = interpolation_solution1_sram_access * hardware_configurations['SRAM Energy']
+    interpolation_solution1_interpolation_ops = hardware_configurations['OP per Interpolation'] * H * W * (16 + 48) * (3 + 32) + projection_solution1_proj_ops # coarse没有SV Prune
+    interpolation_solution1_interpolation_energy = interpolation_solution1_interpolation_ops * hardware_configurations['OP Energy']
+    print(f"Interpolation SRAM Access: {interpolation_solution1_sram_access/1e9:.3f}GB, OP: {interpolation_solution1_interpolation_ops/1e9:.3f}G")
+    print(f"Interpolation SRAM Energy: {interpolation_solution1_sram_energy:.3f}J, OP Energy: {interpolation_solution1_interpolation_energy:.6f}J")
+    
+    total_interpolation_energy = solution1_d2d_energy + interpolation_solution1_sram_energy + interpolation_solution1_interpolation_energy
+    results['Solution 1']['Inter-Chip Latency'] = solution1_d2d_latency
+    results['Solution 1']['Inter-Chip Energy'] = solution1_d2d_energy
+    print(f"Chip: {results['Solution 1']['Chip Energy']:.3f}J, Interpolation: {total_interpolation_energy:.3f}J, UCIe: {results['Solution 1']['Inter-Chip Energy']:.3f}J, DRAM: {results['Solution 1']['Off-Chip Energy']:.3f}J")
+    print(f"Chip: {results['Solution 1']['Chip Latency']*1e3:.3f}ms, UCIe: {results['Solution 1']['Inter-Chip Latency']*1e3:.3f}ms, DRAM: {results['Solution 1']['Off-Chip Latency']*1e3:.3f}ms")
+    d2d_idle_energy = (results['Solution 1']['Chip Latency']-results['Solution 1']['Inter-Chip Latency']) * hardware_configurations['Chiplets'] * hardware_configurations['UCIE IDLE Power'] # 
+    print(f"D2D IDLE Energy: {d2d_idle_energy:.3f}J, Trans energy: {solution1_d2d_energy:.3f}J")
+    results['Solution 1']['Chip Energy'] += total_interpolation_energy
+    results['Solution 1']['Chip Energy'] += d2d_idle_energy # TODO
+    # ---
+    
+    results['Solution 1']['Total Energy'] = results['Solution 1']['Chip Energy'] + results['Solution 1']['Off-Chip Energy'] + results['Solution 1']['Inter-Chip Energy']
+    results['Solution 1']['Pixel Energy'] = results['Solution 1']['Total Energy'] / (H * W)
+    print(f"Per Pixel Energy: {results['Solution 1']['Pixel Energy']*1e6:.3f}μJ/pixel")
     
     # ----------------------------------- Solution 2a -----------------------------------
     print(f"------------- Solution 2a -------------")
@@ -269,28 +300,38 @@ def train():
     results['Solution 2a']['Chip Latency'] = nerf_total_mac_latency
     results['Solution 2a']['Chip Energy'] = nerf_total_energy
     
+    
+    # --- 名字改成2a要
+    projection_solution1_sram_access = H * W * (16. / ray_skipping_size + 48) * 3 * nerf_config['SV'] * (1 - optimizations['SV Pruning']) # 3是3d pts大小
+    projection_solution1_proj_ops = hardware_configurations['OP per Projection'] * H * W * (16. / ray_skipping_size + 48) * nerf_config['SV'] * (1 - optimizations['SV Pruning'])
+    
+    interpolation_solution1_sram_access = solution1_d2d_access + H * W * (16. / ray_skipping_size + 48) * (3 + 32) * nerf_config['SV'] * (1 - optimizations['SV Pruning']) + projection_solution1_sram_access
+    interpolation_solution1_sram_energy = interpolation_solution1_sram_access * hardware_configurations['SRAM Energy']
+    interpolation_solution1_interpolation_ops = hardware_configurations['OP per Interpolation'] * H * W * (16. / ray_skipping_size + 48) * (3 + 32) * (1 - optimizations['SV Pruning']) + projection_solution1_proj_ops # coarse没有SV Prune
+    interpolation_solution1_interpolation_energy = interpolation_solution1_interpolation_ops * hardware_configurations['OP Energy']
+    print(f"Interpolation SRAM Access: {interpolation_solution1_sram_access/1e9:.3f}GB, OP: {interpolation_solution1_interpolation_ops/1e9:.3f}G")
+    print(f"Interpolation SRAM Energy: {interpolation_solution1_sram_energy:.3f}J, OP Energy: {interpolation_solution1_interpolation_energy:.6f}J")
+    
+    total_interpolation_energy = solution1_d2d_energy + interpolation_solution1_sram_energy + interpolation_solution1_interpolation_energy
+    results['Solution 2a']['Inter-Chip Latency'] = solution1_d2d_latency
+    results['Solution 2a']['Inter-Chip Energy'] = solution1_d2d_energy
+    results['Solution 2a']['Off-Chip Energy'] = results['Solution 1']['Off-Chip Energy']
+    results['Solution 2a']['Off-Chip Latency'] = results['Solution 1']['Off-Chip Latency']
+    print(f"Chip: {results['Solution 2a']['Chip Energy']:.3f}J, Interpolation: {total_interpolation_energy:.3f}J, UCIe: {results['Solution 2a']['Inter-Chip Energy']:.3f}J, DRAM: {results['Solution 2a']['Off-Chip Energy']:.3f}J")
+    print(f"Chip: {results['Solution 2a']['Chip Latency']*1e3:.3f}ms, UCIe: {results['Solution 2a']['Inter-Chip Latency']*1e3:.3f}ms, DRAM: {results['Solution 2a']['Off-Chip Latency']*1e3:.3f}ms")
+    d2d_idle_energy = (results['Solution 2a']['Chip Latency']-results['Solution 2a']['Inter-Chip Latency']) * hardware_configurations['Chiplets'] * hardware_configurations['UCIE IDLE Power'] # 
+    print(f"D2D IDLE Energy: {d2d_idle_energy:.3f}J, Trans energy: {solution1_d2d_energy:.3f}J")
+    results['Solution 2a']['Chip Energy'] += total_interpolation_energy
+    results['Solution 2a']['Chip Energy'] += d2d_idle_energy # TODO
+    # ---
+    
+    print(f"Baseline Latency: {results['Baseline']['Chip Latency']:.4f}s; Solution 2a Latency: {results['Solution 2a']['Chip Latency']:.4f}s; {results['Baseline']['Chip Latency']/results['Solution 2a']['Chip Latency']:.4f}") # TODO
+    print(f"Baseline Energy: {results['Baseline']['Chip Energy']:.4f}J; Solution 2a Energy: {results['Solution 2a']['Chip Energy']:.4f}J; {results['Baseline']['Chip Energy']/results['Solution 2a']['Chip Energy']:.4f}")
+    print(f"Equivalent Sparsity Ratio: {1-nerf_total_mac_ops/results['Baseline']['OP']:.4f}")
     results['Solution 2a']['Total Energy'] = results['Solution 2a']['Chip Energy'] + results['Solution 1']['Off-Chip Energy'] + results['Solution 1']['Inter-Chip Energy']
     results['Solution 2a']['Pixel Energy'] = results['Solution 2a']['Total Energy'] / (H * W)
     print(f"Per Pixel Energy: {results['Solution 2a']['Pixel Energy']*1e6:.3f}μJ/pixel")
     results['Solution 2a']['FPS'] = 1 / nerf_total_mac_latency # TODO
-    
-    # Projection & Interpolation, SRAM & Compute Latency Hide? 还没考虑fine sharing情况，不过Fine只减少计算，投影都要做的？检查一下结构 会不会只需要rgb的话有些不用
-    patch_size = 100
-    total_patches_nerf = H * W / patch_size
-    projection_sr_solution2a_sram_access = patch_size * total_patches_nerf * (16. / ray_skipping_size + 48) * 3 * nerf_config['SV'] * (1 - optimizations['SV Pruning']) # 3是3d pts大小
-    projection_sr_solution2a_proj_ops = hardware_configurations['OP per Projection'] * patch_size * total_patches_nerf * (16. / ray_skipping_size + 48) * nerf_config['SV'] * (1 - optimizations['SV Pruning'])
-    
-    interpolation_sr_solution2a_sram_access = solution1_d2d_access + patch_size * total_patches_nerf * (16. / ray_skipping_size + 48) * (3 + 32) * nerf_config['SV'] * (1 - optimizations['SV Pruning']) + projection_sr_solution2a_sram_access
-    interpolation_sr_solution2a_interpolation_ops = hardware_configurations['OP per Interpolation'] * patch_size * total_patches_nerf * (16. / ray_skipping_size + 48) * (3 + 32) * nerf_config['SV'] * (1 - optimizations['SV Pruning']) + projection_sr_solution2a_proj_ops # coarse没有SV Prune
-    print(f"Interpolation SRAM Access: {interpolation_sr_solution2a_sram_access/1e9:.3f}GB, OP: {interpolation_sr_solution2a_interpolation_ops/1e9:.3f}G")
-    interpolation_sr_solution2a_interpolation_latency = interpolation_sr_solution2a_interpolation_ops / (hardware_configurations['Chiplets'] * hardware_configurations['AI Core Frequency'] * 256)
-    interpolation_sr_solution2a_sram_latency = interpolation_sr_solution2a_sram_access / (hardware_configurations['Source View Buffer Bandwidth'] * hardware_configurations['AI Core Frequency'])
-    print(f"Interpolation SRAM Latency: {interpolation_sr_solution2a_sram_latency:.4f}s, OP Latency: {interpolation_sr_solution2a_interpolation_latency:.4f}s")
-    
-    
-    print(f"Baseline Latency: {results['Baseline']['Chip Latency']+0.0309:.4f}s; Solution 2a Latency: {results['Solution 2a']['Chip Latency']+0.0245:.4f}s") # TODO
-    print(f"Baseline Energy: {results['Baseline']['Chip Energy']:.4f}J; Solution 2a Energy: {results['Solution 2a']['Chip Energy']:.4f}J")
-    print(f"Effective Sparsity Ratio: {1-nerf_total_mac_ops/results['Baseline']['OP']:.4f}")
     
     # ----------------------------------- Solution 2b -----------------------------------
     print(f"------------- Solution 2b -------------")
@@ -352,9 +393,39 @@ def train():
     
     results['Solution 2b']['FPS'] = 1 / total_mac_latency # TODO
     
+    # for 2b, interp. + ucie
+    solution1_d2d_access_per_patch = solution1_d2d_access / (2*2*total_patches_base) 
+    sr_solution1_d2d_access = total_patches_nerf * solution1_d2d_access_per_patch # SR的c f没有做别的优化的
+    # print(f"{solution1_d2d_access:.3f}, {sr_solution1_d2d_access:.3f}, {solution1_d2d_access/sr_solution1_d2d_access:.3f}")
+    sr_solution1_d2d_energy = sr_solution1_d2d_access * hardware_configurations['UCIE Energy'] # do we have sram energy to cal?
+    sr_solution1_d2d_latency = sr_solution1_d2d_access / (hardware_configurations['Chiplets'] * hardware_configurations['UCIE Bandwidth'])
+    results['Solution 2b']['Inter-Chip Latency'] = sr_solution1_d2d_latency
+    results['Solution 2b']['Inter-Chip Energy'] = sr_solution1_d2d_energy
+    print(f"SR D2D Access: {sr_solution1_d2d_access/1e9:.3f}GB; SR D2D Energy: {sr_solution1_d2d_energy:.3f}J, SR D2D Latency: {sr_solution1_d2d_latency:.3f}s")
+    
+    # Projection & Interpolation, SRAM & Compute Latency Hide
+    projection_sr_solution1_sram_access = patch_size * total_patches_nerf * (16 + 48) * 3 * nerf_config['SV'] # 3是3d pts大小
+    projection_sr_solution1_proj_ops = hardware_configurations['OP per Projection'] * patch_size * total_patches_nerf * (16 + 48) * nerf_config['SV']
+    
+    interpolation_sr_solution1_sram_access = sr_solution1_d2d_access + patch_size * total_patches_nerf * (16 + 48) * (3 + 32) * nerf_config['SV'] + projection_sr_solution1_sram_access
+    interpolation_sr_solution1_sram_energy = interpolation_sr_solution1_sram_access * hardware_configurations['SRAM Energy']
+    interpolation_sr_solution1_interpolation_ops = hardware_configurations['OP per Interpolation'] * patch_size * total_patches_nerf * (16 + 48) * (3 + 32) + projection_sr_solution1_proj_ops
+    interpolation_sr_solution1_interpolation_energy = interpolation_sr_solution1_interpolation_ops * hardware_configurations['OP Energy']
+    print(f"Interpolation SRAM Access: {interpolation_sr_solution1_sram_access/1e9:.3f}GB, OP: {interpolation_sr_solution1_interpolation_ops/1e9:.3f}G")
+    print(f"Interpolation SRAM Energy: {interpolation_sr_solution1_sram_energy:.3f}J, OP Energy: {interpolation_sr_solution1_interpolation_energy:.6f}J")
+    
+    total_interpolation_energy = sr_solution1_d2d_energy + interpolation_sr_solution1_sram_energy + interpolation_sr_solution1_interpolation_energy
+    print(f"Chip: {results['Solution 2b']['Chip Energy']:.3f}J, Interpolation: {total_interpolation_energy:.3f}J, UCIe: {results['Solution 2b']['Inter-Chip Energy']:.3f}J")
+    print(f"Chip: {results['Solution 2b']['Chip Latency']*1e3:.3f}ms, UCIe: {results['Solution 2b']['Inter-Chip Latency']*1e3:.3f}ms")
+    d2d_idle_energy = (results['Solution 2b']['Chip Latency']-results['Solution 2b']['Inter-Chip Latency']) * hardware_configurations['Chiplets'] * hardware_configurations['UCIE IDLE Power'] # 
+    print(f"D2D IDLE Energy: {d2d_idle_energy:.3f}J, Trans energy: {sr_solution1_d2d_energy:.3f}J")
+    results['Solution 2b']['Chip Energy'] += total_interpolation_energy
+    results['Solution 2b']['Chip Energy'] += d2d_idle_energy
+        
     edp_baseline = results['Baseline']['Chip Latency'] * results['Baseline']['Chip Energy']
     edp_s2 = results['Solution 2b']['Chip Latency'] * results['Solution 2b']['Chip Energy']
     print(f"EDP {edp_baseline:.3f}; {edp_s2:.3f}")
+    
     
     # ----------------------------------- ALL -----------------------------------
     print(f"------------- ALL -------------")
@@ -458,7 +529,6 @@ def train():
     print(f"Interpolation SRAM Access: {interpolation_sr_solution1_sram_access/1e9:.3f}GB, OP: {interpolation_sr_solution1_interpolation_ops/1e9:.3f}G")
     print(f"Interpolation SRAM Energy: {interpolation_sr_solution1_sram_energy:.3f}J, OP Energy: {interpolation_sr_solution1_interpolation_energy:.6f}J")
     
-    # results['ALL']['Chip Latency'] += total_mac_latency
     total_interpolation_energy = sr_solution1_d2d_energy + interpolation_sr_solution1_sram_energy + interpolation_sr_solution1_interpolation_energy
     print(f"Chip: {results['ALL']['Chip Energy']:.3f}J, Interpolation: {total_interpolation_energy:.3f}J, UCIe: {results['ALL']['Inter-Chip Energy']:.3f}J, DRAM: {results['ALL']['Off-Chip Energy']:.3f}J")
     print(f"Chip: {results['ALL']['Chip Latency']*1e3:.3f}ms, UCIe: {results['ALL']['Inter-Chip Latency']*1e3:.3f}ms, DRAM: {results['ALL']['Off-Chip Latency']*1e3:.3f}ms")
@@ -727,6 +797,7 @@ def create_pixel_energy_chart(results):
     solution_1 = results['Solution 1']['Pixel Energy'] * 1e6
     solution_2a = results['Solution 2a']['Pixel Energy'] * 1e6
     solution_2b = results['ALL']['Pixel Energy'] * 1e6
+    print(f"{baseline/solution_1:.3f}; {solution_1/solution_2a:.3f}; {solution_2a/solution_2b:.3f}")
     # categories = ['Baseline', '+1', '+2a', '+2b']
     categories = ['Baseline', '+DASM', '+CFSRE', '+HDS']
     values = [baseline, solution_1, solution_2a, solution_2b]  # PSNR值

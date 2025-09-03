@@ -11,6 +11,7 @@ def create_sr_latency_chart():
     categories = ['Baseline', '+CFSRE']
     a, b = 0.3435, 0.0681
     a, b = 0.3435+0.0309, 0.0681
+    a, b = 7.8724, 1+0.2
     a, b = a / a, b / a
     values = [a*100, b*100]
     colors = ['#B0B0B0', '#505050']  # 渐变灰色
